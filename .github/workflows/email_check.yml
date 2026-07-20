@@ -19,8 +19,7 @@ jobs:
 
     - name: Initialize Ollama Core
       run: |
-        curl -fsSL https://ollama.com | sh
-        ollama serve &
+        curl -fsSL https://ollama.com/install.sh | sh
         sleep 7
 
     - name: Pull Qwen2.5-VL 3B Model
