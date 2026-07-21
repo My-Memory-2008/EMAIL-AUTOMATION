@@ -111,7 +111,7 @@ def get_email_body(msg):
     return body.strip()
 
 def check_email():
-    mail = imaplib.IMAP4_SSL("://gmail.com")
+    mail = imaplib.IMAP4_SSL("imap.gmail.com")
     mail.login(EMAIL_USER, EMAIL_PASS)
     mail.select("inbox")
 
