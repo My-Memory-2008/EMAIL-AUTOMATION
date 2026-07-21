@@ -110,18 +110,19 @@ def get_email_body(msg):
         body = msg.get_payload(decode=True).decode(errors="ignore")
     return body.strip()
 
+
 def check_email():
-    mail = imaplib.IMAP4_SSL("imap.gmail.com")
+    mail = imaplib.IMAP4_SSL("://gmail.com")
     mail.login(EMAIL_USER, EMAIL_PASS)
     mail.select("inbox")
 
-    status, messages = mail.search(None, "UNREAD")
+    # Fixed: Passing search criteria as a byte literal to comply with IMAP standards
+    status, messages = mail.search(None, b"UNREAD")
     if status != "OK" or not messages:
         print("No new unread emails found.")
         return
 
     email_ids = messages.split()
-    # Process only 1 email per cycle due to image-to-tensor translation CPU speeds
     emails_to_process = email_ids[-1:] 
 
     for e_id in emails_to_process:
@@ -138,14 +139,12 @@ def check_email():
                     
                     body_text = get_email_body(msg)
                     
-                    # Transform text directly into an AI image stream structure
                     print("🖼️ Transforming text fields into secure image matrix canvas...")
                     img_bytes = text_to_image_bytes(from_header, subject, body_text)
                     
                     print("🧠 Passing image matrix directly to Qwen2.5-VL...")
                     ai_analysis = analyze_image_with_qwen(img_bytes)
                     
-                    # Generate deep link using unique Message-ID
                     msg_id = msg.get("Message-ID", "").strip("< >")
                     encoded_id = urllib.parse.quote(msg_id)
                     gmail_url = f"https://google.com:{encoded_id}" if msg_id else "https://google.com"
@@ -155,6 +154,7 @@ def check_email():
                     send_ntfy_alert(ai_analysis, gmail_url, priority)
                         
     mail.logout()
+
 
 def send_ntfy_alert(ai_analysis, email_url, priority):
     url = f"https://ntfy.sh{NTFY_TOPIC}"
