@@ -8,21 +8,21 @@ import io
 import requests
 from PIL import Image, ImageDraw, ImageFont
 
+# Load environment secrets
 EMAIL_USER = os.getenv("EMAIL_USER")
 EMAIL_PASS = os.getenv("EMAIL_PASS")
 NTFY_TOPIC = os.getenv("NTFY_TOPIC")
 
+# Target brand filtering
 IMPORTANT_SENDERS = ["kaggle", "google", "youtube"]
 
 def text_to_image_bytes(sender, subject, body):
-    """Renders text data onto a secure image canvas in memory."""
-    # Setup image dimensions (Width, Height) and color palette
+    """Renders text data onto an image canvas in system memory."""
     width = 800
     height = 1000
     image = Image.new("RGB", (width, height), color=(245, 245, 245))
     draw = ImageDraw.Draw(image)
     
-    # Load default Linux system font
     try:
         font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 16)
         bold_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 18)
@@ -30,37 +30,32 @@ def text_to_image_bytes(sender, subject, body):
         font = ImageFont.load_default()
         bold_font = ImageFont.load_default()
 
-    # Draw structural Email Headers
     draw.text((20, 20), f"Sender Address: {sender}", fill=(0, 0, 0), font=bold_font)
     draw.text((20, 50), f"Subject Header: {subject}", fill=(0, 0, 0), font=bold_font)
     draw.line([(20, 85), (780, 85)], fill=(180, 180, 180), width=2)
     
-    # Wrap text cleanly inside image margins
     margin = 20
     offset = 110
     lines = []
     
     clean_body = body[:2000].replace('\r', '')
     for line in clean_body.split('\n'):
-        # Primitive word-wrapping logic for the canvas box
         if len(line) > 80:
             for i in range(0, len(line), 80):
                 lines.append(line[i:i+80])
         else:
             lines.append(line)
 
-    for line in lines[:40]:  # Cap lines to fit the canvas height safely
+    for line in lines[:40]:
         draw.text((margin, offset), line, fill=(50, 50, 50), font=font)
         offset += 22
 
-    # Save to binary byte stream instead of a readable disk file
     img_byte_arr = io.BytesIO()
     image.save(img_byte_arr, format='JPEG')
     return img_byte_arr.getvalue()
 
 def analyze_image_with_qwen(image_bytes):
-    """Feeds the generated raw image bytes directly into the local Vision model."""
-    # Convert image bytes to a safe Base64 string payload
+    """Feeds base64 image data directly into the local vision pipeline."""
     base64_image = base64.b64encode(image_bytes).decode('utf-8')
     
     system_instruction = (
@@ -110,13 +105,13 @@ def get_email_body(msg):
         body = msg.get_payload(decode=True).decode(errors="ignore")
     return body.strip()
 
-
 def check_email():
-    mail = imaplib.IMAP4_SSL("://gmail.com")
+    # FIXED: Clean host routing endpoint domain name string
+    mail = imaplib.IMAP4_SSL("imap.gmail.com")
     mail.login(EMAIL_USER, EMAIL_PASS)
     mail.select("inbox")
 
-    # Fixed: Passing search criteria as a byte literal to comply with IMAP standards
+    # FIXED: Query criteria sent strictly as bytes to avoid server-side parsing bugs
     status, messages = mail.search(None, b"UNREAD")
     if status != "OK" or not messages:
         print("No new unread emails found.")
@@ -154,7 +149,6 @@ def check_email():
                     send_ntfy_alert(ai_analysis, gmail_url, priority)
                         
     mail.logout()
-
 
 def send_ntfy_alert(ai_analysis, email_url, priority):
     url = f"https://ntfy.sh{NTFY_TOPIC}"
