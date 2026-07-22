@@ -111,19 +111,21 @@ def get_email_body(msg):
         body = msg.get_payload(decode=True).decode(errors="ignore")
     return body.strip()
 
+
 def check_email():
-    """Establishes Gmail IMAP handshake and parses parameters."""
-    mail = imaplib.IMAP4_SSL("imap.gmail.com")
+    """Establishes Gmail IMAP handshake and parses parameters cleanly."""
+    mail = imaplib.IMAP4_SSL("://gmail.com")
     mail.login(EMAIL_USER, EMAIL_PASS)
     mail.select("inbox")
 
-    # FIXED: Replaced non-standard 'UNREAD' token with standard 'UNSEEN' IMAP flag 
     status, messages = mail.search(None, "UNSEEN")
     if status != "OK" or not messages or messages[0] == b'':
         print("Inbox clean. No new unseen messages flagged.")
         return
 
-    email_ids = messages.split()
+    # FIXED: Unpacks the first element of the list before executing split
+    email_ids = messages[0].split()
+    
     # Process only the single most recent mail to protect workflow timeout caps
     emails_to_process = email_ids[-1:] 
 
@@ -131,7 +133,7 @@ def check_email():
         status, msg_data = mail.fetch(e_id, "(RFC822)")
         for response_part in msg_data:
             if isinstance(response_part, tuple):
-                msg = email.message_from_bytes(response_part[1])
+                msg = email.message_from_bytes(response_part)
                 from_header = msg.get("From", "")
                 
                 # Check for sender brand validation matches
@@ -142,7 +144,6 @@ def check_email():
                     
                     body_text = get_email_body(msg)
                     
-                    # Log actions without printing sensitive string variables to standard output consoles
                     print("🔄 Processing target match. Compiling matrix array canvas...")
                     img_bytes = text_to_image_bytes(from_header, subject, body_text)
                     
@@ -159,6 +160,7 @@ def check_email():
                     send_ntfy_alert(ai_analysis, gmail_url, priority)
                         
     mail.logout()
+
 
 def send_ntfy_alert(ai_analysis, email_url, priority):
     """Dispatches structural secretary summaries to the mobile listener endpoint."""
