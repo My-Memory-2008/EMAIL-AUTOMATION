@@ -105,14 +105,15 @@ def get_email_body(msg):
         body = msg.get_payload(decode=True).decode(errors="ignore")
     return body.strip()
 
+
+
 def check_email():
-    # FIXED: Clean host routing endpoint domain name string
-    mail = imaplib.IMAP4_SSL("imap.gmail.com")
+    mail = imaplib.IMAP4_SSL("://gmail.com")
     mail.login(EMAIL_USER, EMAIL_PASS)
     mail.select("inbox")
 
-    # FIXED: Query criteria sent strictly as bytes to avoid server-side parsing bugs
-    status, messages = mail.search(None, b"UNREAD")
+    # FIXED: Wrapped search criterion inside explicit IMAP command parentheses
+    status, messages = mail.search(None, '(UNREAD)')
     if status != "OK" or not messages:
         print("No new unread emails found.")
         return
@@ -149,6 +150,7 @@ def check_email():
                     send_ntfy_alert(ai_analysis, gmail_url, priority)
                         
     mail.logout()
+
 
 def send_ntfy_alert(ai_analysis, email_url, priority):
     url = f"https://ntfy.sh{NTFY_TOPIC}"
