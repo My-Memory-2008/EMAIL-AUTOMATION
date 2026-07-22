@@ -8,72 +8,66 @@ import io
 import requests
 from PIL import Image, ImageDraw, ImageFont
 
-# Initialize environments
 EMAIL_USER = os.getenv("EMAIL_USER")
 EMAIL_PASS = os.getenv("EMAIL_PASS")
 NTFY_TOPIC = os.getenv("NTFY_TOPIC")
 
-# Targeting parameters 
 IMPORTANT_SENDERS = ["kaggle", "google", "youtube"]
 
 def text_to_image_bytes(sender, subject, body):
-    """Encodes private text safely directly into a raw image binary matrix."""
+    """Renders text data onto an image canvas in system memory."""
     width = 800
     height = 1000
-    image = Image.new("RGB", (width, height), color=(242, 242, 242))
+    image = Image.new("RGB", (width, height), color=(245, 245, 245))
     draw = ImageDraw.Draw(image)
     
-    # Try loading clean TrueType system assets, fallback to standard terminal bitmapping if missing
     try:
-        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 15)
-        bold_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 17)
+        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 16)
+        bold_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 18)
     except IOError:
         font = ImageFont.load_default()
         bold_font = ImageFont.load_default()
 
-    # Draw masked tracking indicators
-    draw.text((25, 25), f"Origin Vector: {sender}", fill=(10, 10, 10), font=bold_font)
-    draw.text((25, 55), f"Topic Header: {subject}", fill=(10, 10, 10), font=bold_font)
-    draw.line([(25, 90), (775, 90)], fill=(190, 190, 190), width=2)
+    draw.text((20, 20), f"Sender Address: {sender}", fill=(0, 0, 0), font=bold_font)
+    draw.text((20, 50), f"Subject Header: {subject}", fill=(0, 0, 0), font=bold_font)
+    draw.line([(20, 85), (780, 85)], fill=(180, 180, 180), width=2)
     
-    margin = 25
-    offset = 115
+    margin = 20
+    offset = 110
     lines = []
     
-    # Standardize and partition formatting array fields
     clean_body = body[:2000].replace('\r', '')
     for line in clean_body.split('\n'):
-        if len(line) > 85:
-            for i in range(0, len(line), 85):
-                lines.append(line[i:i+85])
+        if len(line) > 80:
+            for i in range(0, len(line), 80):
+                lines.append(line[i:i+80])
         else:
             lines.append(line)
 
-    for line in lines[:38]:
-        draw.text((margin, offset), line, fill=(40, 40, 40), font=font)
+    for line in lines[:40]:
+        draw.text((margin, offset), line, fill=(50, 50, 50), font=font)
         offset += 22
 
-    # Save directly to virtual memory stream array
     img_byte_arr = io.BytesIO()
     image.save(img_byte_arr, format='JPEG')
     return img_byte_arr.getvalue()
 
 def analyze_image_with_qwen(image_bytes):
-    """Streams data arrays directly to local neural layers."""
+    """Feeds base64 image data directly into the local vision pipeline."""
     base64_image = base64.b64encode(image_bytes).decode('utf-8')
     
     system_instruction = (
-        "You are an expert vision personal secretary. Read the text inside the image matrix.\n"
-        "Categorize the content into exactly ONE option:\n"
+        "You are an expert vision-capable personal secretary. Read the text printed within the input image carefully. "
+        "Categorize the document into exactly ONE of these options:\n"
         "- Important Meeting / Event\n"
         "- Competition Winner / Prize Notification\n"
         "- Account Suspension / Channel Ban Risk\n"
         "- Core Software / Platform Update\n"
         "- Third-Party / Marketing / Low Priority\n\n"
-        "Provide your response precisely in this template layout:\n"
+        "Format your output exactly like this:\n"
         "Sender Type: [Brand / Third-Party]\n"
         "Category: [Selected Option]\n"
-        "Summary: [1 sentence summarizing content insights]\n"
+        "Summary: [1 sentence summarizing core content]\n"
         "Action Required: [Yes/No]"
     )
 
@@ -83,24 +77,22 @@ def analyze_image_with_qwen(image_bytes):
             json={
                 "model": "qwen2.5vl:3b",
                 "system": system_instruction,
-                "prompt": "Extract the structured personal secretary briefing from the email visualization canvas.",
+                "prompt": "Analyze the attached email image render and extract its structural secretary brief.",
                 "images": [base64_image],
                 "stream": False,
                 "options": {
-                    "temperature": 0.0,
-                    "num_predict": 120
+                    "temperature": 0.1
                 }
             },
             timeout=240
         )
         if response.status_code == 200:
-            return response.json().get("response", "AI processing anomaly.")
+            return response.json().get("response", "AI analysis processing failed.")
     except Exception as e:
-        return f"AI Script Execution Log Error: {str(e)}"
-    return "Local Processing Engine Timeout."
+        return f"AI Secretary Error: {str(e)}"
+    return "AI Executive Briefing Offline."
 
 def get_email_body(msg):
-    """Pulls clean, unformatted text parts."""
     body = ""
     if msg.is_multipart():
         for part in msg.walk():
@@ -111,22 +103,20 @@ def get_email_body(msg):
         body = msg.get_payload(decode=True).decode(errors="ignore")
     return body.strip()
 
-
 def check_email():
-    """Establishes Gmail IMAP handshake and parses parameters cleanly."""
-    mail = imaplib.IMAP4_SSL("://gmail.com")
+    """Main scanning connection engine."""
+    # FIXED: Clean host routing endpoint domain name string
+    mail = imaplib.IMAP4_SSL("imap.gmail.com")
     mail.login(EMAIL_USER, EMAIL_PASS)
     mail.select("inbox")
 
     status, messages = mail.search(None, "UNSEEN")
     if status != "OK" or not messages or messages[0] == b'':
-        print("Inbox clean. No new unseen messages flagged.")
+        print("No new unread emails found.")
         return
 
-    # FIXED: Unpacks the first element of the list before executing split
+    # FIXED: Extracts the string out of the list wrapper container before running split
     email_ids = messages[0].split()
-    
-    # Process only the single most recent mail to protect workflow timeout caps
     emails_to_process = email_ids[-1:] 
 
     for e_id in emails_to_process:
@@ -136,7 +126,6 @@ def check_email():
                 msg = email.message_from_bytes(response_part)
                 from_header = msg.get("From", "")
                 
-                # Check for sender brand validation matches
                 if any(brand in from_header.lower() for brand in IMPORTANT_SENDERS):
                     subject, encoding = decode_header(msg.get("Subject", "No Subject"))
                     if isinstance(subject, bytes):
@@ -144,13 +133,12 @@ def check_email():
                     
                     body_text = get_email_body(msg)
                     
-                    print("🔄 Processing target match. Compiling matrix array canvas...")
+                    print("🖼️ Transforming text fields into secure image matrix canvas...")
                     img_bytes = text_to_image_bytes(from_header, subject, body_text)
                     
-                    print("🧠 Forwarding vector maps into local model layers...")
+                    print("🧠 Passing image matrix directly to Qwen2.5-VL...")
                     ai_analysis = analyze_image_with_qwen(img_bytes)
                     
-                    # Generate deep-linking reference indicators
                     msg_id = msg.get("Message-ID", "").strip("< >")
                     encoded_id = urllib.parse.quote(msg_id)
                     gmail_url = f"https://google.com:{encoded_id}" if msg_id else "https://google.com"
@@ -161,17 +149,15 @@ def check_email():
                         
     mail.logout()
 
-
 def send_ntfy_alert(ai_analysis, email_url, priority):
-    """Dispatches structural secretary summaries to the mobile listener endpoint."""
     url = f"https://ntfy.sh{NTFY_TOPIC}"
     headers = {
-        "Title": "👁️ Qwen Vision Secretary Report",
+        "Title": "👁️ Qwen Vision Secretary Brief",
         "Priority": priority,
         "Tags": "camera,robot",
         "Click": email_url
     }
-    data = f"{ai_analysis}\n\n👉 Tap notification to immediately inspect source mail thread."
+    data = f"{ai_analysis}\n\n👉 Tap this notification to open email."
     requests.post(url, data=data, headers=headers)
 
 if __name__ == "__main__":
