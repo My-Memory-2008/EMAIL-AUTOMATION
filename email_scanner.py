@@ -105,8 +105,7 @@ def get_email_body(msg):
 
 def check_email():
     """Main scanning connection engine."""
-    # FIXED: Clean host routing endpoint domain name string
-    mail = imaplib.IMAP4_SSL("imap.gmail.com")
+    mail = imaplib.IMAP4_SSL("://gmail.com")
     mail.login(EMAIL_USER, EMAIL_PASS)
     mail.select("inbox")
 
@@ -115,7 +114,6 @@ def check_email():
         print("No new unread emails found.")
         return
 
-    # FIXED: Extracts the string out of the list wrapper container before running split
     email_ids = messages[0].split()
     emails_to_process = email_ids[-1:] 
 
@@ -123,7 +121,8 @@ def check_email():
         status, msg_data = mail.fetch(e_id, "(RFC822)")
         for response_part in msg_data:
             if isinstance(response_part, tuple):
-                msg = email.message_from_bytes(response_part)
+                # FIXED: Extracted raw data bytes index directly to prevent tuple decoding error
+                msg = email.message_from_bytes(response_part[1])
                 from_header = msg.get("From", "")
                 
                 if any(brand in from_header.lower() for brand in IMPORTANT_SENDERS):
