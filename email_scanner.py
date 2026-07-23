@@ -282,7 +282,7 @@ def get_email_body(msg):
 def check_email():
     """Main scanning connection engine."""
     # FIXED: Replaced invalid "://gmail.com" with correct IMAP server hostname
-    mail = imaplib.IMAP4_SSL("://gmail.com")
+    mail = imaplib.IMAP4_SSL("imap.gmail.com")
     mail.login(EMAIL_USER, EMAIL_PASS)
     mail.select("inbox")
 
