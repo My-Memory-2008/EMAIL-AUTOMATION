@@ -356,19 +356,21 @@ def check_email():
     for folder in GMAIL_FOLDERS:
         print(f"📂 Opening Folder Location: {folder}...")
         try:
+            # We use select() with readonly=True to view messages safely
             status, _ = mail.select(folder, readonly=True)
             if status != "OK":
                 print(f"⚠️ Could not open folder {folder}. Skipping...")
                 continue
             
-            # IMAP Search query searching for all messages received since today started
-            status, messages = mail.search(None, f'SINCE {today_imap_str}')
+            # FIXED: Arguments split cleanly to prevent Gmail parsing errors
+            status, messages = mail.search(None, 'SINCE', today_imap_str)
             if status != "OK" or not messages or messages[0] == b'':
                 print(f"🏖️ No emails found in {folder} from today.")
                 continue
 
             email_ids = messages[0].split()
             print(f"🔍 Found {len(email_ids)} total items inside {folder} from today.")
+
 
             for e_id in email_ids:
                 status, msg_data = mail.fetch(e_id, "(RFC822)")
