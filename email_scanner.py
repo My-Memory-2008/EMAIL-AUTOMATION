@@ -131,19 +131,27 @@ def check_email():
 
     email_ids = messages[0].split()
     emails_to_process = email_ids[-1:] 
+    
     for e_id in emails_to_process:
         status, msg_data = mail.fetch(e_id, "(RFC822)")
         for response_part in msg_data:
             if isinstance(response_part, tuple):
-                msg = email.message_from_bytes(response_part[1])
+                msg = email.message_from_bytes(response_part)
                 from_header = msg.get("From", "")
-                print(f"📩 Checking unread email from: {from_header}") # Add this trace log
+                
+                # Extract and parse the Date header safely
+                raw_date = msg.get("Date", "")
+                parsed_date = email.utils.parsedate_to_datetime(raw_date)
+                # Format it neatly (Example: 24-Jul-2026 14:36)
+                formatted_time = parsed_date.strftime("%d-%b-%Y %H:%M") if raw_date else "Unknown Date/Time"
+                
+                print(f"📩 [{formatted_time}] Checking unread email from: {from_header}")
                 
                 if any(brand in from_header.lower() for brand in IMPORTANT_SENDERS):
-                    # ... your existing processing logic ...
-                    print("🎯 Matched an important sender!")
+                    print(f"🎯 Matched an important sender!")
+                    # ... rest of your processing logic ...
                 else:
-                    print("⏩ Skipped: Sender not in important list.") # Add this trace log
+                    print(f"⏩ Skipped: Sender not in important list.")
 
     for e_id in emails_to_process:
         status, msg_data = mail.fetch(e_id, "(RFC822)")
