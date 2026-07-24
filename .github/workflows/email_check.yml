@@ -41,4 +41,5 @@ jobs:
         EMAIL_USER: ${{ secrets.EMAIL_USER }}
         EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
         NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+        PYTHONUNBUFFERED: "1"
       run: python email_scanner.py
