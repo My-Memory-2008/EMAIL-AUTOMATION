@@ -295,7 +295,7 @@ def check_email():
     email_ids = messages[0].split()
     emails_to_process = email_ids[-1:] 
     for e_id in emails_to_process:
-    status, msg_data = mail.fetch(e_id, "(RFC822)")
+        status, msg_data = mail.fetch(e_id, "(RFC822)")
     for response_part in msg_data:
         if isinstance(response_part, tuple):
             msg = email.message_from_bytes(response_part[1])
