@@ -340,29 +340,50 @@ def get_email_body(msg):
     # If no plain text exists, fall back to raw HTML string content
     return html_body if html_body else "No readable text content found."
 
-def check_email():
-    """Main scanning connection engine exploring all system categories."""
-    mail = imaplib.IMAP4_SSL("imap.gmail.com")
 
+def check_email():
+    """Main scanning connection engine with automatic folder name detection."""
+    mail = imaplib.IMAP4_SSL("://gmail.com")
     mail.login(EMAIL_USER, EMAIL_PASS)
 
-    # Dynamic date format required for IMAP: "DD-Mon-YYYY" (e.g., 24-Jul-2026)
     user_tz = pytz.timezone("Asia/Kolkata") 
     today_imap_str = datetime.now(user_tz).strftime("%d-%b-%Y")
     print(f"📅 Scanning all mail categories initialized for date: {today_imap_str}\n")
 
+    # 1. Dynamically discover real folder paths to prevent localization errors
+    status, folder_list = mail.list()
+    all_mail_folder = None
+    spam_folder = None
+
+    if status == "OK":
+        for folder_info in folder_list:
+            folder_string = folder_info.decode("utf-8", errors="ignore")
+            # Gmail flags All Mail as \All and Spam as \Spam internally
+            if r"\All" in folder_string:
+                all_mail_folder = folder_string.split(' "/" ')[-1].strip('"')
+            elif r"\Spam" in folder_string:
+                spam_folder = folder_string.split(' "/" ')[-1].strip('"')
+
+    # Fallback to defaults if auto-detection fails
+    target_folders = []
+    if all_mail_folder: target_folders.append(all_mail_folder)
+    else: target_folders.append("[Gmail]/All Mail")
+    
+    if spam_folder: target_folders.append(spam_folder)
+    else: target_folders.append("[Gmail]/Spam")
+
     processed_message_ids = set()
 
-    for folder in GMAIL_FOLDERS:
+    # 2. Begin scanning the discovered folders
+    for folder in target_folders:
         print(f"📂 Opening Folder Location: {folder}...")
         try:
-            # We use select() with readonly=True to view messages safely
             status, _ = mail.select(folder, readonly=True)
             if status != "OK":
                 print(f"⚠️ Could not open folder {folder}. Skipping...")
                 continue
             
-            # FIXED: Arguments split cleanly to prevent Gmail parsing errors
+            # Use separate tokens to guarantee strict syntax safety
             status, messages = mail.search(None, 'SINCE', today_imap_str)
             if status != "OK" or not messages or messages[0] == b'':
                 print(f"🏖️ No emails found in {folder} from today.")
@@ -371,16 +392,14 @@ def check_email():
             email_ids = messages[0].split()
             print(f"🔍 Found {len(email_ids)} total items inside {folder} from today.")
 
-
             for e_id in email_ids:
                 status, msg_data = mail.fetch(e_id, "(RFC822)")
                 for response_part in msg_data:
                     if isinstance(response_part, tuple):
                         msg = email.message_from_bytes(response_part[1])
                         
-                        # Use Message-ID header to prevent processing identical cross-listed items twice
                         msg_id = msg.get("Message-ID", "").strip("< >")
-                        if msg_id in processed_message_ids:
+                        if not msg_id or msg_id in processed_message_ids:
                             continue
                         processed_message_ids.add(msg_id)
 
@@ -408,7 +427,7 @@ def check_email():
                         ai_analysis = analyze_image_with_qwen(img_bytes)
                         
                         encoded_id = urllib.parse.quote(msg_id)
-                        gmail_url = f"https://google.com{encoded_id}" if msg_id else "https://google.com"
+                        gmail_url = f"https://google.com{encoded_id}"
                         
                         priority = "high" if "Suspension" in ai_analysis or "Winner" in ai_analysis else "default"
                         
