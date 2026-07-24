@@ -342,7 +342,8 @@ def get_email_body(msg):
 
 def check_email():
     """Main scanning connection engine exploring all system categories."""
-    mail = imaplib.IMAP4_SSL("://gmail.com")
+    mail = imaplib.IMAP4_SSL("imap.gmail.com")
+
     mail.login(EMAIL_USER, EMAIL_PASS)
 
     # Dynamic date format required for IMAP: "DD-Mon-YYYY" (e.g., 24-Jul-2026)
