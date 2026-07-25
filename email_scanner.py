@@ -337,21 +337,20 @@ def get_email_body(msg):
 
 def check_email():
     """Main scanning connection engine exploring all system categories."""
-    mail = imaplib.IMAP4_SSL("://gmail.com")
+    # FIXED HOSTNAME
+    mail = imaplib.IMAP4_SSL("imap.gmail.com")
     mail.login(EMAIL_USER, EMAIL_PASS)
 
     user_tz = pytz.timezone("Asia/Kolkata") 
     today_imap_str = datetime.now(user_tz).strftime("%d-%b-%Y")
     print(f"📅 Scanning all mail categories initialized for date: {today_imap_str}\n")
 
-    # Fixed clean folder names required for Gmail's system directories
     target_folders = ["[Gmail]/All Mail", "[Gmail]/Spam"]
     processed_message_ids = set()
 
     for folder in target_folders:
         print(f"📂 Opening Folder Location: {folder}...")
         try:
-            # FIXED: Explicitly string formatting the target directory to manage whitespaces correctly
             status, _ = mail.select(f'"{folder}"', readonly=True)
             if status != "OK":
                 print(f"⚠️ Could not select folder: {folder}")
@@ -362,7 +361,7 @@ def check_email():
                 print(f"🏖️ No emails found in {folder} from today.")
                 continue
 
-            # FIXED: Grab array element index 0 safely to pull string data before utilizing .split()
+            # FIXED LIST EXTRACTION CRASH
             email_ids = messages[0].split()
             print(f"🔍 Found {len(email_ids)} total items inside {folder} from today.")
 
@@ -370,7 +369,6 @@ def check_email():
                 status, msg_data = mail.fetch(e_id, "(RFC822)")
                 for response_part in msg_data:
                     if isinstance(response_part, tuple):
-                        # FIXED: Extracted indexing directly to target raw payload strings cleanly
                         msg = email.message_from_bytes(response_part[1])
                         
                         msg_id = msg.get("Message-ID", "").strip("< >")
@@ -422,3 +420,4 @@ def send_ntfy_alert(ai_analysis, email_url, priority):
 
 if __name__ == "__main__":
     check_email()
+
