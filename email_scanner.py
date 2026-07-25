@@ -230,15 +230,12 @@ import base64
 import io
 import requests
 from datetime import datetime
-import pytz  # Handles accurate timezone dates
+import pytz
 from PIL import Image, ImageDraw, ImageFont
 
 EMAIL_USER = os.getenv("EMAIL_USER")
 EMAIL_PASS = os.getenv("EMAIL_PASS")
 NTFY_TOPIC = os.getenv("NTFY_TOPIC")
-
-# Target folders to capture every single section of Gmail
-GMAIL_FOLDERS = ["[Gmail]/All Mail", "[Gmail]/Spam"]
 
 def text_to_image_bytes(sender, subject, body):
     """Renders text data onto an image canvas in system memory."""
@@ -337,59 +334,46 @@ def get_email_body(msg):
         if payload:
             return payload.decode(errors="ignore").strip()
             
-    # If no plain text exists, fall back to raw HTML string content
     return html_body if html_body else "No readable text content found."
 
-
 def check_email():
-    """Main scanning connection engine with automatic folder name detection."""
-    mail = imaplib.IMAP4_SSL("://gmail.com")
+    """Main scanning connection engine exploring all system categories."""
+    # STRICT FIXED CONNECTION LINE
+    mail = imaplib.IMAP4_SSL("imap.gmail.com")
     mail.login(EMAIL_USER, EMAIL_PASS)
 
     user_tz = pytz.timezone("Asia/Kolkata") 
     today_imap_str = datetime.now(user_tz).strftime("%d-%b-%Y")
     print(f"📅 Scanning all mail categories initialized for date: {today_imap_str}\n")
 
-    # 1. Dynamically discover real folder paths to prevent localization errors
     status, folder_list = mail.list()
-    all_mail_folder = None
-    spam_folder = None
+    target_folders = []
 
     if status == "OK":
         for folder_info in folder_list:
             folder_string = folder_info.decode("utf-8", errors="ignore")
-            # Gmail flags All Mail as \All and Spam as \Spam internally
-            if r"\All" in folder_string:
-                all_mail_folder = folder_string.split(' "/" ')[-1].strip('"')
-            elif r"\Spam" in folder_string:
-                spam_folder = folder_string.split(' "/" ')[-1].strip('"')
+            if r"\All" in folder_string or r"\Spam" in folder_string:
+                real_name = folder_string.split(' "/" ')[-1].strip('"')
+                target_folders.append(real_name)
 
-    # Fallback to defaults if auto-detection fails
-    target_folders = []
-    if all_mail_folder: target_folders.append(all_mail_folder)
-    else: target_folders.append("[Gmail]/All Mail")
-    
-    if spam_folder: target_folders.append(spam_folder)
-    else: target_folders.append("[Gmail]/Spam")
+    if not target_folders:
+        target_folders = ["[Gmail]/All Mail", "[Gmail]/Spam"]
 
     processed_message_ids = set()
 
-    # 2. Begin scanning the discovered folders
     for folder in target_folders:
         print(f"📂 Opening Folder Location: {folder}...")
         try:
             status, _ = mail.select(folder, readonly=True)
             if status != "OK":
-                print(f"⚠️ Could not open folder {folder}. Skipping...")
                 continue
             
-            # Use separate tokens to guarantee strict syntax safety
             status, messages = mail.search(None, 'SINCE', today_imap_str)
-            if status != "OK" or not messages or messages[0] == b'':
+            if status != "OK" or not messages or messages == b'':
                 print(f"🏖️ No emails found in {folder} from today.")
                 continue
 
-            email_ids = messages[0].split()
+            email_ids = messages.split()
             print(f"🔍 Found {len(email_ids)} total items inside {folder} from today.")
 
             for e_id in email_ids:
@@ -419,16 +403,11 @@ def check_email():
                         print(f"📥 [{formatted_time}] Processing: From: {from_header} | Subject: {subject}")
                         
                         body_text = get_email_body(msg)
-                        
-                        print("🖼️ Transforming text fields into secure image matrix canvas...")
                         img_bytes = text_to_image_bytes(from_header, subject, body_text)
-                        
-                        print("🧠 Passing image matrix directly to Qwen2.5-VL...")
                         ai_analysis = analyze_image_with_qwen(img_bytes)
                         
                         encoded_id = urllib.parse.quote(msg_id)
                         gmail_url = f"https://google.com{encoded_id}"
-                        
                         priority = "high" if "Suspension" in ai_analysis or "Winner" in ai_analysis else "default"
                         
                         send_ntfy_alert(ai_analysis, gmail_url, priority)
