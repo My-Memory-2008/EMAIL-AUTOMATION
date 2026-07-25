@@ -220,8 +220,6 @@
 
 
 
-
-
 import imaplib
 import email
 from email.header import decode_header
@@ -340,7 +338,8 @@ def get_email_body(msg):
 
 def check_email():
     """Main scanning connection engine exploring all system categories."""
-    mail = imaplib.IMAP4_SSL("://gmail.com")
+    # STRICT STANDARD IMAP HOST
+    mail = imaplib.IMAP4_SSL("imap.gmail.com")
     mail.login(EMAIL_USER, EMAIL_PASS)
 
     user_tz = pytz.timezone("Asia/Kolkata") 
@@ -363,17 +362,14 @@ def check_email():
                 print(f"🏖️ No emails found in {folder} from today.")
                 continue
 
-            # ====================================================
-            # 🚀 CRITICAL FIX: Safe list extraction extraction logic
-            # ====================================================
-            raw_data = messages[0] if isinstance(messages, list) else messages
-            if not raw_data or raw_data == b'':
+            # SAFE PARSING LOGIC TO PREVENT LIST SPLIT CRASHES
+            raw_bytes = messages[0] if isinstance(messages, list) else messages
+            if not raw_bytes or raw_bytes == b'':
                 print(f"🏖️ No emails found in {folder} from today.")
                 continue
                 
-            email_ids = raw_data.split()
+            email_ids = raw_bytes.split()
             print(f"🔍 Found {len(email_ids)} total items inside {folder} from today.")
-            # ====================================================
 
             for e_id in email_ids:
                 status, msg_data = mail.fetch(e_id, "(RFC822)")
@@ -382,7 +378,7 @@ def check_email():
                     
                 for response_part in msg_data:
                     if isinstance(response_part, tuple):
-                        msg = email.message_from_bytes(response_part[1]) # Target byte index explicitly
+                        msg = email.message_from_bytes(response_part[1])
                         
                         msg_id = msg.get("Message-ID", "")
                         if msg_id:
