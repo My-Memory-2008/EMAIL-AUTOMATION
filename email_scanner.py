@@ -335,10 +335,12 @@ def get_email_body(msg):
             
     return html_body if html_body else "No readable text content found."
 
+
+
+
 def check_email():
     """Main scanning connection engine exploring all system categories."""
-    # FIXED HOSTNAME
-    mail = imaplib.IMAP4_SSL("imap.gmail.com")
+    mail = imaplib.IMAP4_SSL("://gmail.com")
     mail.login(EMAIL_USER, EMAIL_PASS)
 
     user_tz = pytz.timezone("Asia/Kolkata") 
@@ -361,18 +363,26 @@ def check_email():
                 print(f"🏖️ No emails found in {folder} from today.")
                 continue
 
-            # FIXED LIST EXTRACTION CRASH
             email_ids = messages[0].split()
             print(f"🔍 Found {len(email_ids)} total items inside {folder} from today.")
 
             for e_id in email_ids:
                 status, msg_data = mail.fetch(e_id, "(RFC822)")
+                if status != "OK":
+                    continue
+                    
                 for response_part in msg_data:
+                    # FIX: Only unpack if the response part is a valid structural tuple
                     if isinstance(response_part, tuple):
                         msg = email.message_from_bytes(response_part[1])
                         
-                        msg_id = msg.get("Message-ID", "").strip("< >")
-                        if not msg_id or msg_id in processed_message_ids:
+                        msg_id = msg.get("Message-ID", "")
+                        if msg_id:
+                            msg_id = msg_id.strip("< >")
+                        else:
+                            msg_id = f"no-id-{e_id.decode()}"
+                            
+                        if msg_id in processed_message_ids:
                             continue
                         processed_message_ids.add(msg_id)
 
@@ -385,7 +395,7 @@ def check_email():
                         except Exception:
                             formatted_time = "Unknown Time"
 
-                        subject, encoding = decode_header(msg.get("Subject", "No Subject"))
+                        subject, encoding = decode_header(msg.get("Subject", "No Subject"))[0]
                         if isinstance(subject, bytes):
                             subject = subject.decode(encoding or "utf-8", errors="ignore")
 
@@ -406,6 +416,7 @@ def check_email():
             print(f"❌ Error while scanning folder {folder}: {str(folder_error)}")
 
     mail.logout()
+
 
 def send_ntfy_alert(ai_analysis, email_url, priority):
     url = f"https://ntfy.sh{NTFY_TOPIC.strip('/')}"
