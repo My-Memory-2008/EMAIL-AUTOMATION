@@ -364,7 +364,7 @@ def check_email():
     for folder in target_folders:
         print(f"📂 Opening Folder Location: {folder}...")
         try:
-            status, _ = mail.select(folder, readonly=True)
+            status, _ = mail.select(f'"{folder}"', readonly=True)
             if status != "OK":
                 continue
             
