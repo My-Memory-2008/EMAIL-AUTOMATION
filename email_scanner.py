@@ -220,6 +220,7 @@
 
 
 
+
 import imaplib
 import email
 from email.header import decode_header
@@ -347,7 +348,8 @@ def get_email_body(msg):
 
 def check_email():
     """Main scanning connection engine exploring all folders sequentially."""
-    mail = imaplib.IMAP4_SSL("://gmail.com")
+    # FIXED HOSTNAME
+    mail = imaplib.IMAP4_SSL("imap.gmail.com")
     mail.login(EMAIL_USER, EMAIL_PASS)
 
     user_tz = pytz.timezone("Asia/Kolkata") 
@@ -380,9 +382,9 @@ def check_email():
                     continue
                 
                 for response_part in msg_data:
-                    # 🚀 CRITICAL FIX: Only process valid data tuples, completely ignoring trailing bytes like b')'
+                    # 🚀 FIXED LOOP TYPE GUARD: Only process valid data tuples, completely ignoring trailing closing bytes
                     if isinstance(response_part, tuple):
-                        # Safely parse the raw email data from the tuple element
+                        # Use index 1 approach from your working baseline setup
                         msg = email.message_from_bytes(response_part[1])
                         
                         msg_id = msg.get("Message-ID", "")
@@ -422,7 +424,7 @@ def check_email():
                         print("🧠 Passing image matrix directly to Qwen2.5-VL...")
                         ai_analysis = analyze_image_with_qwen(img_bytes)
                         
-                        # Process notification actions using screenshot parameters
+                        # Process notification actions using your baseline screenshot parameters
                         encoded_id = urllib.parse.quote(msg_id)
                         gmail_url = f"https://google.com{encoded_id}"
                         priority = "high" if "Suspension" in ai_analysis or "Winner" in ai_analysis else "default"
