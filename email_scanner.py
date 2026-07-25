@@ -219,6 +219,7 @@
 
 
 
+
 import imaplib
 import email
 from email.header import decode_header
@@ -379,11 +380,9 @@ def check_email():
                     continue
                 
                 for response_part in msg_data:
-                    # ====================================================
-                    # 🚀 CRITICAL FIX: Only process valid data tuples
-                    # ====================================================
+                    # 🚀 CRITICAL FIX: Only process valid data tuples, completely ignoring trailing bytes like b')'
                     if isinstance(response_part, tuple):
-                        # Use index 1 to mirror your working baseline exactly
+                        # Safely parse the raw email data from the tuple element
                         msg = email.message_from_bytes(response_part[1])
                         
                         msg_id = msg.get("Message-ID", "")
@@ -431,7 +430,7 @@ def check_email():
                         send_ntfy_alert(ai_analysis, gmail_url, priority)
                         print("✅ Analysis dispatched via ntfy successfully.")
                         
-                        # Log inside memory tracking file
+                        # Mark item as read inside AI memory without changing Gmail state
                         save_to_ai_memory(msg_id)
                         ai_read_memory.add(msg_id)
                         print(f"💾 Marked as Read in AI Memory: {msg_id}\n")
@@ -440,7 +439,6 @@ def check_email():
                 print(f"⚠️ Error while processing email ID {e_id.decode()}: {str(single_mail_error)}. Continuing...")
 
     mail.logout()
-
 
 def send_ntfy_alert(ai_analysis, email_url, priority):
     url = f"https://ntfy.sh{NTFY_TOPIC.strip('/')}"
