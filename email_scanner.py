@@ -220,7 +220,6 @@
 
 
 
-
 import imaplib
 import email
 from email.header import decode_header
@@ -346,12 +345,10 @@ def get_email_body(msg):
             
     return ""
 
-
-
-
 def check_email():
     """Main scanning connection engine exploring all folders sequentially."""
-    mail = imaplib.IMAP4_SSL("://gmail.com")
+    # FIXED: Replaced invalid "://gmail.com" with correct IMAP server hostname
+    mail = imaplib.IMAP4_SSL("imap.gmail.com")
     mail.login(EMAIL_USER, EMAIL_PASS)
 
     user_tz = pytz.timezone("Asia/Kolkata") 
@@ -373,9 +370,7 @@ def check_email():
             print(f"🏖️ No emails found in {folder} from today.")
             continue
 
-        # ====================================================
-        # 🚀 CRITICAL FIX: Extract index 0 safely from the list structure
-        # ====================================================
+        # FIXED: Extract index 0 safely to handle variation between nested list strings
         try:
             if isinstance(messages, list):
                 raw_data = messages[0]
@@ -397,7 +392,7 @@ def check_email():
                     continue
                 
                 for response_part in msg_data:
-                    # Explicit type verification blocks trailing bytes from crashing loops
+                    # FIXED TYPE GUARD: Ignores trailing closing bytes from crashing loops
                     if isinstance(response_part, tuple):
                         # Use index 1 approach mirroring your baseline layout exactly
                         msg = email.message_from_bytes(response_part[1])
@@ -439,7 +434,7 @@ def check_email():
                         print("🧠 Passing image matrix directly to Qwen2.5-VL...")
                         ai_analysis = analyze_image_with_qwen(img_bytes)
                         
-                        # Process notification actions using baseline screenshot parameters
+                        # Process notification actions using baseline parameters
                         encoded_id = urllib.parse.quote(msg_id)
                         gmail_url = f"https://google.com{encoded_id}"
                         priority = "high" if "Suspension" in ai_analysis or "Winner" in ai_analysis else "default"
@@ -456,8 +451,6 @@ def check_email():
                 print(f"⚠️ Error while processing email ID {e_id.decode()}: {str(single_mail_error)}. Continuing...")
 
     mail.logout()
-
-
 
 def send_ntfy_alert(ai_analysis, email_url, priority):
     url = f"https://ntfy.sh{NTFY_TOPIC.strip('/')}"
