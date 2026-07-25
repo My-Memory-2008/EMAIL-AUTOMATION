@@ -219,8 +219,6 @@
 
 
 
-
-
 import imaplib
 import email
 from email.header import decode_header
@@ -241,14 +239,14 @@ NTFY_TOPIC = os.getenv("NTFY_TOPIC")
 MEMORY_FILE = "processed_emails.txt"
 
 def load_ai_memory():
-    """Loads already read message IDs from the local AI memory tracking file."""
+    """Loads handled email tracking strings from the local file storage."""
     if not os.path.exists(MEMORY_FILE):
         return set()
     with open(MEMORY_FILE, "r", encoding="utf-8") as f:
         return set(line.strip() for line in f if line.strip())
 
 def save_to_ai_memory(msg_id):
-    """Marks a message ID as read in the AI memory tracking file."""
+    """Saves a processed message hash permanently onto the local file."""
     with open(MEMORY_FILE, "a", encoding="utf-8") as f:
         f.write(f"{msg_id}\n")
 
@@ -329,8 +327,7 @@ def analyze_image_with_qwen(image_bytes):
     return "AI Executive Briefing Offline."
 
 def get_email_body(msg):
-    """Recursively walks email structure to find and extract plain text or HTML fallback."""
-    html_body = ""
+    """Recursively walks email structure to find and extract plain text."""
     if msg.is_multipart():
         for part in msg.walk():
             content_type = part.get_content_type()
@@ -340,27 +337,22 @@ def get_email_body(msg):
                 payload = part.get_payload(decode=True)
                 if payload:
                     return payload.decode(errors="ignore").strip()
-            elif content_type == "text/html" and "attachment" not in content_disposition:
-                payload = part.get_payload(decode=True)
-                if payload:
-                    html_body = payload.decode(errors="ignore").strip()
     else:
         payload = msg.get_payload(decode=True)
         if payload:
             return payload.decode(errors="ignore").strip()
             
-    return html_body if html_body else "No readable text content found."
+    return ""
 
 def check_email():
-    """Main scanning connection engine exploring all system categories sequentially."""
-    mail = imaplib.IMAP4_SSL("://gmail.com")
+    """Main scanning connection engine exploring all folders sequentially."""
+    mail = imaplib.IMAP4_SSL("imap.gmail.com")
     mail.login(EMAIL_USER, EMAIL_PASS)
 
     user_tz = pytz.timezone("Asia/Kolkata") 
     today_imap_str = datetime.now(user_tz).strftime("%d-%b-%Y")
     print(f"📅 Scanning all mail categories initialized for date: {today_imap_str}\n")
 
-    # Load previously processed message history to protect actual unread status in Gmail
     ai_read_memory = load_ai_memory()
     target_folders = ["[Gmail]/All Mail", "[Gmail]/Spam"]
 
@@ -372,25 +364,25 @@ def check_email():
             continue
         
         status, messages = mail.search(None, 'SINCE', today_imap_str)
-        if status != "OK" or not messages or messages[0] == b'':
+        if status != "OK" or not messages or messages == [b''] or messages == b'':
             print(f"🏖️ No emails found in {folder} from today.")
             continue
 
         email_ids = messages[0].split()
         print(f"🔍 Found {len(email_ids)} total items inside {folder} from today. Processing sequentially...")
 
-        # Loop through each individual email one by one
+        # Process each individual email one by one safely
         for e_id in email_ids:
             try:
-                # Fetch only this single message id data chunk
                 status, msg_data = mail.fetch(e_id, "(RFC822)")
                 if status != "OK" or not msg_data:
                     continue
                 
                 for response_part in msg_data:
-                    # FIX: Explicit type guard prevents unpacking crashes on trailing metadata bytes
                     if isinstance(response_part, tuple):
-                        msg = email.message_from_bytes(response_part[1])
+                        # ROBUST FIX: Detect array index format safely to handle variation between inbox & archive structures
+                        raw_bytes = response_part[1] if len(response_part) > 1 else response_part[0]
+                        msg = email.message_from_bytes(raw_bytes)
                         
                         msg_id = msg.get("Message-ID", "")
                         if msg_id:
@@ -398,7 +390,7 @@ def check_email():
                         else:
                             msg_id = f"generated-id-{e_id.decode()}"
                         
-                        # AI Memory Filter: Check if we have read this item before
+                        # AI Memory Evaluation Check
                         if msg_id in ai_read_memory:
                             print(f"⏩ Skipping: Email ID {msg_id} already marked as read in AI Memory.")
                             continue
@@ -418,11 +410,18 @@ def check_email():
 
                         print(f"📥 [{formatted_time}] Processing Single Mail: From: {from_header} | Subject: {subject}")
                         
-                        # Process contents safely inside the item try-catch container
                         body_text = get_email_body(msg)
+                        if not body_text:
+                            print("⚠️ Skipping processing: No readable text body found.")
+                            continue
+
+                        print("🖼️ Transforming text fields into secure image matrix canvas...")
                         img_bytes = text_to_image_bytes(from_header, subject, body_text)
+                        
+                        print("🧠 Passing image matrix directly to Qwen2.5-VL...")
                         ai_analysis = analyze_image_with_qwen(img_bytes)
                         
+                        # RESTORED SCREENSHOT LOGIC: Completes notifications cleanly
                         encoded_id = urllib.parse.quote(msg_id)
                         gmail_url = f"https://google.com{encoded_id}"
                         priority = "high" if "Suspension" in ai_analysis or "Winner" in ai_analysis else "default"
@@ -430,13 +429,13 @@ def check_email():
                         send_ntfy_alert(ai_analysis, gmail_url, priority)
                         print("✅ Analysis dispatched via ntfy successfully.")
                         
-                        # Save item ID locally so it is ignored on subsequent automation sweeps
+                        # Mark item as read inside AI memory without changing Gmail state
                         save_to_ai_memory(msg_id)
                         ai_read_memory.add(msg_id)
                         print(f"💾 Marked as Read in AI Memory: {msg_id}\n")
                         
             except Exception as single_mail_error:
-                print(f"⚠️ Error while processing email ID {e_id.decode()}: {str(single_mail_error)}. Continuing to next item...")
+                print(f"⚠️ Error while processing email ID {e_id.decode()}: {str(single_mail_error)}. Continuing...")
 
     mail.logout()
 
