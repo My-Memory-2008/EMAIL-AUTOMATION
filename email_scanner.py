@@ -346,7 +346,7 @@ def get_email_body(msg):
 
 def check_email():
     """Main scanning connection engine exploring all folders sequentially."""
-    mail = imaplib.IMAP4_SSL("imap.gmail.com")
+    mail = imaplib.IMAP4_SSL("://gmail.com")
     mail.login(EMAIL_USER, EMAIL_PASS)
 
     user_tz = pytz.timezone("Asia/Kolkata") 
@@ -368,7 +368,7 @@ def check_email():
             print(f"🏖️ No emails found in {folder} from today.")
             continue
 
-        email_ids = messages[0].split()
+        email_ids = messages.split()
         print(f"🔍 Found {len(email_ids)} total items inside {folder} from today. Processing sequentially...")
 
         # Process each individual email one by one safely
@@ -379,10 +379,12 @@ def check_email():
                     continue
                 
                 for response_part in msg_data:
+                    # ====================================================
+                    # 🚀 CRITICAL FIX: Only process valid data tuples
+                    # ====================================================
                     if isinstance(response_part, tuple):
-                        # ROBUST FIX: Detect array index format safely to handle variation between inbox & archive structures
-                        raw_bytes = response_part[1] if len(response_part) > 1 else response_part[0]
-                        msg = email.message_from_bytes(raw_bytes)
+                        # Use index 1 to mirror your working baseline exactly
+                        msg = email.message_from_bytes(response_part[1])
                         
                         msg_id = msg.get("Message-ID", "")
                         if msg_id:
@@ -421,7 +423,7 @@ def check_email():
                         print("🧠 Passing image matrix directly to Qwen2.5-VL...")
                         ai_analysis = analyze_image_with_qwen(img_bytes)
                         
-                        # RESTORED SCREENSHOT LOGIC: Completes notifications cleanly
+                        # Process notification actions using screenshot parameters
                         encoded_id = urllib.parse.quote(msg_id)
                         gmail_url = f"https://google.com{encoded_id}"
                         priority = "high" if "Suspension" in ai_analysis or "Winner" in ai_analysis else "default"
@@ -429,7 +431,7 @@ def check_email():
                         send_ntfy_alert(ai_analysis, gmail_url, priority)
                         print("✅ Analysis dispatched via ntfy successfully.")
                         
-                        # Mark item as read inside AI memory without changing Gmail state
+                        # Log inside memory tracking file
                         save_to_ai_memory(msg_id)
                         ai_read_memory.add(msg_id)
                         print(f"💾 Marked as Read in AI Memory: {msg_id}\n")
@@ -438,6 +440,7 @@ def check_email():
                 print(f"⚠️ Error while processing email ID {e_id.decode()}: {str(single_mail_error)}. Continuing...")
 
     mail.logout()
+
 
 def send_ntfy_alert(ai_analysis, email_url, priority):
     url = f"https://ntfy.sh{NTFY_TOPIC.strip('/')}"
