@@ -220,6 +220,7 @@
 
 
 
+
 import imaplib
 import email
 from email.header import decode_header
@@ -236,6 +237,20 @@ from PIL import Image, ImageDraw, ImageFont
 EMAIL_USER = os.getenv("EMAIL_USER")
 EMAIL_PASS = os.getenv("EMAIL_PASS")
 NTFY_TOPIC = os.getenv("NTFY_TOPIC")
+
+MEMORY_FILE = "processed_emails.txt"
+
+def load_ai_memory():
+    """Loads already read message IDs from the local AI memory tracking file."""
+    if not os.path.exists(MEMORY_FILE):
+        return set()
+    with open(MEMORY_FILE, "r", encoding="utf-8") as f:
+        return set(line.strip() for line in f if line.strip())
+
+def save_to_ai_memory(msg_id):
+    """Marks a message ID as read in the AI memory tracking file."""
+    with open(MEMORY_FILE, "a", encoding="utf-8") as f:
+        f.write(f"{msg_id}\n")
 
 def text_to_image_bytes(sender, subject, body):
     """Renders text data onto an image canvas in system memory."""
@@ -337,46 +352,43 @@ def get_email_body(msg):
     return html_body if html_body else "No readable text content found."
 
 def check_email():
-    """Main scanning connection engine exploring all system categories."""
-    # STRICT STANDARD IMAP HOST
-    mail = imaplib.IMAP4_SSL("imap.gmail.com")
+    """Main scanning connection engine exploring all system categories sequentially."""
+    mail = imaplib.IMAP4_SSL("://gmail.com")
     mail.login(EMAIL_USER, EMAIL_PASS)
 
     user_tz = pytz.timezone("Asia/Kolkata") 
     today_imap_str = datetime.now(user_tz).strftime("%d-%b-%Y")
     print(f"📅 Scanning all mail categories initialized for date: {today_imap_str}\n")
 
+    # Load previously processed message history to protect actual unread status in Gmail
+    ai_read_memory = load_ai_memory()
     target_folders = ["[Gmail]/All Mail", "[Gmail]/Spam"]
-    processed_message_ids = set()
 
     for folder in target_folders:
         print(f"📂 Opening Folder Location: {folder}...")
-        try:
-            status, _ = mail.select(f'"{folder}"', readonly=True)
-            if status != "OK":
-                print(f"⚠️ Could not select folder: {folder}")
-                continue
-            
-            status, messages = mail.search(None, 'SINCE', today_imap_str)
-            if status != "OK" or not messages:
-                print(f"🏖️ No emails found in {folder} from today.")
-                continue
+        status, _ = mail.select(f'"{folder}"', readonly=True)
+        if status != "OK":
+            print(f"⚠️ Could not select folder: {folder}")
+            continue
+        
+        status, messages = mail.search(None, 'SINCE', today_imap_str)
+        if status != "OK" or not messages or messages[0] == b'':
+            print(f"🏖️ No emails found in {folder} from today.")
+            continue
 
-            # SAFE PARSING LOGIC TO PREVENT LIST SPLIT CRASHES
-            raw_bytes = messages[0] if isinstance(messages, list) else messages
-            if not raw_bytes or raw_bytes == b'':
-                print(f"🏖️ No emails found in {folder} from today.")
-                continue
-                
-            email_ids = raw_bytes.split()
-            print(f"🔍 Found {len(email_ids)} total items inside {folder} from today.")
+        email_ids = messages[0].split()
+        print(f"🔍 Found {len(email_ids)} total items inside {folder} from today. Processing sequentially...")
 
-            for e_id in email_ids:
+        # Loop through each individual email one by one
+        for e_id in email_ids:
+            try:
+                # Fetch only this single message id data chunk
                 status, msg_data = mail.fetch(e_id, "(RFC822)")
-                if status != "OK":
+                if status != "OK" or not msg_data:
                     continue
-                    
+                
                 for response_part in msg_data:
+                    # FIX: Explicit type guard prevents unpacking crashes on trailing metadata bytes
                     if isinstance(response_part, tuple):
                         msg = email.message_from_bytes(response_part[1])
                         
@@ -384,11 +396,12 @@ def check_email():
                         if msg_id:
                             msg_id = msg_id.strip("< >")
                         else:
-                            msg_id = f"no-id-{e_id.decode()}"
-                            
-                        if msg_id in processed_message_ids:
+                            msg_id = f"generated-id-{e_id.decode()}"
+                        
+                        # AI Memory Filter: Check if we have read this item before
+                        if msg_id in ai_read_memory:
+                            print(f"⏩ Skipping: Email ID {msg_id} already marked as read in AI Memory.")
                             continue
-                        processed_message_ids.add(msg_id)
 
                         from_header = msg.get("From", "")
                         raw_date = msg.get("Date", "")
@@ -403,8 +416,9 @@ def check_email():
                         if isinstance(subject, bytes):
                             subject = subject.decode(encoding or "utf-8", errors="ignore")
 
-                        print(f"📥 [{formatted_time}] Processing: From: {from_header} | Subject: {subject}")
+                        print(f"📥 [{formatted_time}] Processing Single Mail: From: {from_header} | Subject: {subject}")
                         
+                        # Process contents safely inside the item try-catch container
                         body_text = get_email_body(msg)
                         img_bytes = text_to_image_bytes(from_header, subject, body_text)
                         ai_analysis = analyze_image_with_qwen(img_bytes)
@@ -414,10 +428,15 @@ def check_email():
                         priority = "high" if "Suspension" in ai_analysis or "Winner" in ai_analysis else "default"
                         
                         send_ntfy_alert(ai_analysis, gmail_url, priority)
-                        print("✅ Analysis dispatched via ntfy successfully.\n")
+                        print("✅ Analysis dispatched via ntfy successfully.")
                         
-        except Exception as folder_error:
-            print(f"❌ Error while scanning folder {folder}: {str(folder_error)}")
+                        # Save item ID locally so it is ignored on subsequent automation sweeps
+                        save_to_ai_memory(msg_id)
+                        ai_read_memory.add(msg_id)
+                        print(f"💾 Marked as Read in AI Memory: {msg_id}\n")
+                        
+            except Exception as single_mail_error:
+                print(f"⚠️ Error while processing email ID {e_id.decode()}: {str(single_mail_error)}. Continuing to next item...")
 
     mail.logout()
 
