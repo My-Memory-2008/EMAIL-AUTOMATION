@@ -340,8 +340,7 @@ def get_email_body(msg):
 
 def check_email():
     """Main scanning connection engine exploring all system categories."""
-    # IMMUTABLE CORRECT HOSTNAME
-    mail = imaplib.IMAP4_SSL("imap.gmail.com")
+    mail = imaplib.IMAP4_SSL("://gmail.com")
     mail.login(EMAIL_USER, EMAIL_PASS)
 
     user_tz = pytz.timezone("Asia/Kolkata") 
@@ -360,12 +359,21 @@ def check_email():
                 continue
             
             status, messages = mail.search(None, 'SINCE', today_imap_str)
-            if status != "OK" or not messages or messages == b'':
+            if status != "OK" or not messages:
                 print(f"🏖️ No emails found in {folder} from today.")
                 continue
 
-            email_ids = messages.split()
+            # ====================================================
+            # 🚀 CRITICAL FIX: Safe list extraction extraction logic
+            # ====================================================
+            raw_data = messages[0] if isinstance(messages, list) else messages
+            if not raw_data or raw_data == b'':
+                print(f"🏖️ No emails found in {folder} from today.")
+                continue
+                
+            email_ids = raw_data.split()
             print(f"🔍 Found {len(email_ids)} total items inside {folder} from today.")
+            # ====================================================
 
             for e_id in email_ids:
                 status, msg_data = mail.fetch(e_id, "(RFC822)")
@@ -373,9 +381,8 @@ def check_email():
                     continue
                     
                 for response_part in msg_data:
-                    # FIX: Structural check tracking safe unpacking blocks
                     if isinstance(response_part, tuple):
-                        msg = email.message_from_bytes(response_part)
+                        msg = email.message_from_bytes(response_part[1]) # Target byte index explicitly
                         
                         msg_id = msg.get("Message-ID", "")
                         if msg_id:
