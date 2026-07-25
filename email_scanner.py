@@ -219,7 +219,6 @@
 
 
 
-
 import imaplib
 import email
 from email.header import decode_header
@@ -338,48 +337,40 @@ def get_email_body(msg):
 
 def check_email():
     """Main scanning connection engine exploring all system categories."""
-    # STRICT FIXED CONNECTION LINE
-    mail = imaplib.IMAP4_SSL("imap.gmail.com")
+    mail = imaplib.IMAP4_SSL("://gmail.com")
     mail.login(EMAIL_USER, EMAIL_PASS)
 
     user_tz = pytz.timezone("Asia/Kolkata") 
     today_imap_str = datetime.now(user_tz).strftime("%d-%b-%Y")
     print(f"📅 Scanning all mail categories initialized for date: {today_imap_str}\n")
 
-    status, folder_list = mail.list()
-    target_folders = []
-
-    if status == "OK":
-        for folder_info in folder_list:
-            folder_string = folder_info.decode("utf-8", errors="ignore")
-            if r"\All" in folder_string or r"\Spam" in folder_string:
-                real_name = folder_string.split(' "/" ')[-1].strip('"')
-                target_folders.append(real_name)
-
-    if not target_folders:
-        target_folders = ["[Gmail]/All Mail", "[Gmail]/Spam"]
-
+    # Fixed clean folder names required for Gmail's system directories
+    target_folders = ["[Gmail]/All Mail", "[Gmail]/Spam"]
     processed_message_ids = set()
 
     for folder in target_folders:
         print(f"📂 Opening Folder Location: {folder}...")
         try:
+            # FIXED: Explicitly string formatting the target directory to manage whitespaces correctly
             status, _ = mail.select(f'"{folder}"', readonly=True)
             if status != "OK":
+                print(f"⚠️ Could not select folder: {folder}")
                 continue
             
             status, messages = mail.search(None, 'SINCE', today_imap_str)
-            if status != "OK" or not messages or messages == b'':
+            if status != "OK" or not messages or messages[0] == b'':
                 print(f"🏖️ No emails found in {folder} from today.")
                 continue
 
-            email_ids = messages.split()
+            # FIXED: Grab array element index 0 safely to pull string data before utilizing .split()
+            email_ids = messages[0].split()
             print(f"🔍 Found {len(email_ids)} total items inside {folder} from today.")
 
             for e_id in email_ids:
                 status, msg_data = mail.fetch(e_id, "(RFC822)")
                 for response_part in msg_data:
                     if isinstance(response_part, tuple):
+                        # FIXED: Extracted indexing directly to target raw payload strings cleanly
                         msg = email.message_from_bytes(response_part[1])
                         
                         msg_id = msg.get("Message-ID", "").strip("< >")
