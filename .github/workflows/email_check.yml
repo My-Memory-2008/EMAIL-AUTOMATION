@@ -16,11 +16,21 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y fonts-dejavu-core
-
-    - name: Initialize Ollama Core
+    
+    - name: Install Ollama
       run: |
-        curl -fsSL https://ollama.com/install.sh | sh
-        sleep 7
+          # Safe dedicated installer string path execution 
+          curl -fsSL https://ollama.com/install.sh | sh
+          sleep 7
+
+    - name: Start Ollama Server
+      run: |
+          ollama serve &
+          echo "Waiting for Ollama server to boot..."
+          until curl -s http://127.0.0.1:11434 > /dev/null; do
+            sleep 1
+          done
+          echo "Ollama server is up and running!"
 
     - name: Pull Qwen2.5-VL 3B Model
       run: |
