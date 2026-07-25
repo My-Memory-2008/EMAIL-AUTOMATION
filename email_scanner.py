@@ -219,6 +219,9 @@
 
 
 
+
+
+
 import imaplib
 import email
 from email.header import decode_header
@@ -335,12 +338,10 @@ def get_email_body(msg):
             
     return html_body if html_body else "No readable text content found."
 
-
-
-
 def check_email():
     """Main scanning connection engine exploring all system categories."""
-    mail = imaplib.IMAP4_SSL("://gmail.com")
+    # IMMUTABLE CORRECT HOSTNAME
+    mail = imaplib.IMAP4_SSL("imap.gmail.com")
     mail.login(EMAIL_USER, EMAIL_PASS)
 
     user_tz = pytz.timezone("Asia/Kolkata") 
@@ -359,11 +360,11 @@ def check_email():
                 continue
             
             status, messages = mail.search(None, 'SINCE', today_imap_str)
-            if status != "OK" or not messages or messages[0] == b'':
+            if status != "OK" or not messages or messages == b'':
                 print(f"🏖️ No emails found in {folder} from today.")
                 continue
 
-            email_ids = messages[0].split()
+            email_ids = messages.split()
             print(f"🔍 Found {len(email_ids)} total items inside {folder} from today.")
 
             for e_id in email_ids:
@@ -372,9 +373,9 @@ def check_email():
                     continue
                     
                 for response_part in msg_data:
-                    # FIX: Only unpack if the response part is a valid structural tuple
+                    # FIX: Structural check tracking safe unpacking blocks
                     if isinstance(response_part, tuple):
-                        msg = email.message_from_bytes(response_part[1])
+                        msg = email.message_from_bytes(response_part)
                         
                         msg_id = msg.get("Message-ID", "")
                         if msg_id:
@@ -395,7 +396,7 @@ def check_email():
                         except Exception:
                             formatted_time = "Unknown Time"
 
-                        subject, encoding = decode_header(msg.get("Subject", "No Subject"))[0]
+                        subject, encoding = decode_header(msg.get("Subject", "No Subject"))
                         if isinstance(subject, bytes):
                             subject = subject.decode(encoding or "utf-8", errors="ignore")
 
@@ -417,7 +418,6 @@ def check_email():
 
     mail.logout()
 
-
 def send_ntfy_alert(ai_analysis, email_url, priority):
     url = f"https://ntfy.sh{NTFY_TOPIC.strip('/')}"
     headers = {
@@ -431,4 +431,3 @@ def send_ntfy_alert(ai_analysis, email_url, priority):
 
 if __name__ == "__main__":
     check_email()
-
