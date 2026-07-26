@@ -368,6 +368,7 @@ def check_email():
 
     ai_read_memory = load_ai_memory()
     target_folders = ["[Gmail]/All Mail", "[Gmail]/Spam"]
+    processed_count = 0
 
     for folder in target_folders:
         try:
@@ -389,80 +390,103 @@ def check_email():
                 continue
 
             email_ids = raw_bytes.split()
-            print(f"🔍 Found {len(email_ids)} total items inside {folder} from today. Processing sequentially...\n")
+            print(f"🔍 Found {len(email_ids)} total items inside {folder} from today.\n")
 
             # Process each individual email one by one safely
             for e_id in email_ids:
                 try:
                     status, msg_data = mail.fetch(e_id, "(RFC822)")
-                    if status != "OK" or not msg_data:
+                    if status != "OK" or not msg_data or len(msg_data) == 0:
+                        print(f"⚠️ Could not fetch email ID {e_id.decode()}")
                         continue
                     
+                    # FIXED: Properly extract message data from the response tuple
+                    msg_content = None
                     for response_part in msg_data:
-                        # Filter isolates trailing data closing byte arrays from crashing code pipelines
-                        if isinstance(response_part, tuple):
-                            # PASS DIRECTLY: Feeds the data structure correctly into the email interpreter 
-                            msg = email.message_from_bytes(response_part[1])
-                            
-                            msg_id = msg.get("Message-ID", "")
-                            if msg_id:
-                                msg_id = msg_id.strip("< >")
-                            else:
-                                msg_id = f"generated-id-{e_id.decode()}"
-                            
-                            # AI Memory Evaluation Check
-                            if msg_id in ai_read_memory:
-                                print(f"⏩ Skipping: Email ID {msg_id} already marked as read in AI Memory.")
-                                continue
+                        if isinstance(response_part, tuple) and len(response_part) >= 2:
+                            msg_content = response_part[1]
+                            break
+                    
+                    if msg_content is None:
+                        print(f"⚠️ No valid message content found for email ID {e_id.decode()}")
+                        continue
+                    
+                    # Parse the email message
+                    try:
+                        msg = email.message_from_bytes(msg_content)
+                    except Exception as parse_error:
+                        print(f"⚠️ Error parsing email ID {e_id.decode()}: {str(parse_error)}")
+                        continue
+                    
+                    msg_id = msg.get("Message-ID", "")
+                    if msg_id:
+                        msg_id = msg_id.strip("< >")
+                    else:
+                        msg_id = f"generated-id-{e_id.decode()}"
+                    
+                    # AI Memory Evaluation Check
+                    if msg_id in ai_read_memory:
+                        print(f"⏩ Skipping: Email ID {msg_id} already marked as read in AI Memory.")
+                        continue
 
-                            from_header = msg.get("From", "")
-                            raw_date = msg.get("Date", "")
-                            
-                            try:
-                                parsed_date = email.utils.parsedate_to_datetime(raw_date)
-                                formatted_time = parsed_date.strftime("%H:%M:%S")
-                            except Exception:
-                                formatted_time = "Unknown Time"
+                    from_header = msg.get("From", "Unknown Sender")
+                    raw_date = msg.get("Date", "")
+                    
+                    try:
+                        parsed_date = email.utils.parsedate_to_datetime(raw_date)
+                        formatted_time = parsed_date.strftime("%H:%M:%S")
+                    except Exception:
+                        formatted_time = "Unknown Time"
 
-                            subject, encoding = decode_header(msg.get("Subject", "No Subject"))
-                            if isinstance(subject, bytes):
-                                subject = subject.decode(encoding or "utf-8", errors="ignore")
+                    subject, encoding = decode_header(msg.get("Subject", "No Subject"))
+                    if isinstance(subject, bytes):
+                        subject = subject.decode(encoding or "utf-8", errors="ignore")
 
-                            print(f"📥 [{formatted_time}] Processing Single Mail: From: {from_header} | Subject: {subject}")
-                            
-                            body_text = get_email_body(msg)
-                            if not body_text:
-                                print("⚠️ Skipping processing: No readable text body found.")
-                                continue
+                    print(f"📥 [{formatted_time}] Processing Single Mail:")
+                    print(f"   From: {from_header}")
+                    print(f"   Subject: {subject}")
+                    
+                    body_text = get_email_body(msg)
+                    if not body_text:
+                        print("⚠️ Skipping processing: No readable text body found.\n")
+                        continue
 
-                            print("🖼️ Transforming text fields into secure image matrix canvas...")
-                            img_bytes = text_to_image_bytes(from_header, subject, body_text)
-                            
-                            print("🧠 Passing image matrix directly to Qwen2.5-VL...")
-                            ai_analysis = analyze_image_with_qwen(img_bytes)
-                            
-                            # Process notification actions using baseline parameters
-                            encoded_id = urllib.parse.quote(msg_id)
-                            gmail_url = f"https://google.com{encoded_id}"
-                            priority = "high" if "Suspension" in ai_analysis or "Winner" in ai_analysis else "default"
-                            
-                            send_ntfy_alert(ai_analysis, gmail_url, priority)
-                            print("✅ Analysis dispatched via ntfy successfully.")
-                            
-                            # Mark item as read inside AI memory without changing Gmail state
-                            save_to_ai_memory(msg_id)
-                            ai_read_memory.add(msg_id)
-                            print(f"💾 Marked as Read in AI Memory: {msg_id}\n")
-                            
+                    print("🖼️ Transforming text fields into secure image matrix canvas...")
+                    img_bytes = text_to_image_bytes(from_header, subject, body_text)
+                    
+                    print("🧠 Passing image matrix directly to Qwen2.5-VL...")
+                    ai_analysis = analyze_image_with_qwen(img_bytes)
+                    
+                    print(f"\n🤖 AI Analysis Result:\n{ai_analysis}\n")
+                    
+                    # Process notification actions using baseline parameters
+                    encoded_id = urllib.parse.quote(msg_id)
+                    gmail_url = f"https://google.com{encoded_id}"
+                    priority = "high" if "Suspension" in ai_analysis or "Winner" in ai_analysis else "default"
+                    
+                    send_ntfy_alert(ai_analysis, gmail_url, priority)
+                    print("✅ Analysis dispatched via ntfy successfully.")
+                    
+                    # Mark item as read inside AI memory without changing Gmail state
+                    save_to_ai_memory(msg_id)
+                    ai_read_memory.add(msg_id)
+                    processed_count += 1
+                    print(f"💾 Marked as Read in AI Memory: {msg_id}\n")
+                    print("=" * 80 + "\n")
+                    
                 except Exception as single_mail_error:
-                    print(f"⚠️ Error while processing email ID {e_id.decode()}: {str(single_mail_error)}. Continuing...\n")
+                    print(f"⚠️ Error while processing email ID {e_id.decode()}: {str(single_mail_error)}\n")
+                    continue
         
         except Exception as folder_error:
             print(f"⚠️ Error processing folder {folder}: {str(folder_error)}\n")
             continue
 
     mail.logout()
-    print("✅ IMAP connection closed.")
+    print("=" * 80)
+    print(f"✅ IMAP connection closed.")
+    print(f"📊 Processed {processed_count} email(s) in this run.")
+    print(f"📂 Total processed emails in memory: {len(ai_read_memory)}")
 
 def send_ntfy_alert(ai_analysis, email_url, priority):
     url = f"https://ntfy.sh{NTFY_TOPIC.strip('/')}"
