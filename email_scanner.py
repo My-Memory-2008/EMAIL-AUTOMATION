@@ -219,7 +219,6 @@
 
 
 
-
 import imaplib
 import email
 from email.header import decode_header
@@ -365,21 +364,17 @@ def check_email():
             continue
         
         status, messages = mail.search(None, 'SINCE', today_imap_str)
-        if status != "OK" or not messages or messages == [b''] or messages == b'':
+        if status != "OK" or not messages:
             print(f"🏖️ No emails found in {folder} from today.")
             continue
 
-        try:
-            if isinstance(messages, list):
-                raw_data = messages[0]
-            else:
-                raw_data = messages
-                
-            email_ids = raw_data.split()
-        except Exception as parse_error:
-            print(f"⚠️ Error parsing message list: {str(parse_error)}")
+        # Extract IMAP list arrays cleanly without crashing
+        raw_bytes = messages[0] if isinstance(messages, list) else messages
+        if not raw_bytes or raw_bytes == b'':
+            print(f"🏖️ No emails found in {folder} from today.")
             continue
-            
+
+        email_ids = raw_bytes.split()
         print(f"🔍 Found {len(email_ids)} total items inside {folder} from today. Processing sequentially...")
 
         # Process each individual email one by one safely
@@ -390,8 +385,9 @@ def check_email():
                     continue
                 
                 for response_part in msg_data:
-                    # 🚀 CRITICAL FIX: Verify it's a tuple and extract index 1 matching your baseline exactly
-                    if isinstance(response_part, tuple) and len(response_part) > 1:
+                    # Filter isolates trailing data closing byte arrays from crashing code pipelines
+                    if isinstance(response_part, tuple):
+                        # PASS DIRECTLY: Feeds the data structure correctly into the email interpreter 
                         msg = email.message_from_bytes(response_part[1])
                         
                         msg_id = msg.get("Message-ID", "")
@@ -431,7 +427,7 @@ def check_email():
                         print("🧠 Passing image matrix directly to Qwen2.5-VL...")
                         ai_analysis = analyze_image_with_qwen(img_bytes)
                         
-                        # Process notification actions using baseline screenshot parameters
+                        # Process notification actions using baseline parameters
                         encoded_id = urllib.parse.quote(msg_id)
                         gmail_url = f"https://google.com{encoded_id}"
                         priority = "high" if "Suspension" in ai_analysis or "Winner" in ai_analysis else "default"
@@ -449,7 +445,6 @@ def check_email():
 
     mail.logout()
 
-
 def send_ntfy_alert(ai_analysis, email_url, priority):
     url = f"https://ntfy.sh{NTFY_TOPIC.strip('/')}"
     headers = {
@@ -460,6 +455,8 @@ def send_ntfy_alert(ai_analysis, email_url, priority):
     }
     data = f"{ai_analysis}\n\n👉 Tap this notification to open email."
     requests.post(url, data=data.encode('utf-8'), headers=headers)
+
+
 
 if __name__ == "__main__":
     check_email()
