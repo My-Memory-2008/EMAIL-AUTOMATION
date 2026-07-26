@@ -1,6 +1,3 @@
-
-
-
 # import imaplib
 # import email
 # from email.header import decode_header
@@ -219,6 +216,7 @@
 
 
 
+
 import imaplib
 import email
 from email.header import decode_header
@@ -346,8 +344,23 @@ def get_email_body(msg):
 
 def check_email():
     """Main scanning connection engine exploring all folders sequentially."""
-    mail = imaplib.IMAP4_SSL("://gmail.com")
-    mail.login(EMAIL_USER, EMAIL_PASS)
+    try:
+        print("🔐 Connecting to Gmail IMAP server...")
+        mail = imaplib.IMAP4_SSL("imap.gmail.com")
+        print("✅ Successfully connected to Gmail!")
+    except Exception as conn_error:
+        print(f"❌ IMAP Connection Failed: {str(conn_error)}")
+        print("⚠️ Verify EMAIL_USER and EMAIL_PASS environment variables are set correctly.")
+        return
+    
+    try:
+        mail.login(EMAIL_USER, EMAIL_PASS)
+        print("✅ Successfully logged in!")
+    except Exception as login_error:
+        print(f"❌ Login Failed: {str(login_error)}")
+        print("⚠️ Check your email credentials.")
+        mail.logout()
+        return
 
     user_tz = pytz.timezone("Asia/Kolkata") 
     today_imap_str = datetime.now(user_tz).strftime("%d-%b-%Y")
@@ -357,93 +370,99 @@ def check_email():
     target_folders = ["[Gmail]/All Mail", "[Gmail]/Spam"]
 
     for folder in target_folders:
-        print(f"📂 Opening Folder Location: {folder}...")
-        status, _ = mail.select(f'"{folder}"', readonly=True)
-        if status != "OK":
-            print(f"⚠️ Could not select folder: {folder}")
-            continue
+        try:
+            print(f"📂 Opening Folder Location: {folder}...")
+            status, _ = mail.select(f'"{folder}"', readonly=True)
+            if status != "OK":
+                print(f"⚠️ Could not select folder: {folder}")
+                continue
+            
+            status, messages = mail.search(None, 'SINCE', today_imap_str)
+            if status != "OK" or not messages:
+                print(f"🏖️ No emails found in {folder} from today.")
+                continue
+
+            # Extract IMAP list arrays cleanly without crashing
+            raw_bytes = messages[0] if isinstance(messages, list) else messages
+            if not raw_bytes or raw_bytes == b'':
+                print(f"🏖️ No emails found in {folder} from today.")
+                continue
+
+            email_ids = raw_bytes.split()
+            print(f"🔍 Found {len(email_ids)} total items inside {folder} from today. Processing sequentially...\n")
+
+            # Process each individual email one by one safely
+            for e_id in email_ids:
+                try:
+                    status, msg_data = mail.fetch(e_id, "(RFC822)")
+                    if status != "OK" or not msg_data:
+                        continue
+                    
+                    for response_part in msg_data:
+                        # Filter isolates trailing data closing byte arrays from crashing code pipelines
+                        if isinstance(response_part, tuple):
+                            # PASS DIRECTLY: Feeds the data structure correctly into the email interpreter 
+                            msg = email.message_from_bytes(response_part[1])
+                            
+                            msg_id = msg.get("Message-ID", "")
+                            if msg_id:
+                                msg_id = msg_id.strip("< >")
+                            else:
+                                msg_id = f"generated-id-{e_id.decode()}"
+                            
+                            # AI Memory Evaluation Check
+                            if msg_id in ai_read_memory:
+                                print(f"⏩ Skipping: Email ID {msg_id} already marked as read in AI Memory.")
+                                continue
+
+                            from_header = msg.get("From", "")
+                            raw_date = msg.get("Date", "")
+                            
+                            try:
+                                parsed_date = email.utils.parsedate_to_datetime(raw_date)
+                                formatted_time = parsed_date.strftime("%H:%M:%S")
+                            except Exception:
+                                formatted_time = "Unknown Time"
+
+                            subject, encoding = decode_header(msg.get("Subject", "No Subject"))
+                            if isinstance(subject, bytes):
+                                subject = subject.decode(encoding or "utf-8", errors="ignore")
+
+                            print(f"📥 [{formatted_time}] Processing Single Mail: From: {from_header} | Subject: {subject}")
+                            
+                            body_text = get_email_body(msg)
+                            if not body_text:
+                                print("⚠️ Skipping processing: No readable text body found.")
+                                continue
+
+                            print("🖼️ Transforming text fields into secure image matrix canvas...")
+                            img_bytes = text_to_image_bytes(from_header, subject, body_text)
+                            
+                            print("🧠 Passing image matrix directly to Qwen2.5-VL...")
+                            ai_analysis = analyze_image_with_qwen(img_bytes)
+                            
+                            # Process notification actions using baseline parameters
+                            encoded_id = urllib.parse.quote(msg_id)
+                            gmail_url = f"https://google.com{encoded_id}"
+                            priority = "high" if "Suspension" in ai_analysis or "Winner" in ai_analysis else "default"
+                            
+                            send_ntfy_alert(ai_analysis, gmail_url, priority)
+                            print("✅ Analysis dispatched via ntfy successfully.")
+                            
+                            # Mark item as read inside AI memory without changing Gmail state
+                            save_to_ai_memory(msg_id)
+                            ai_read_memory.add(msg_id)
+                            print(f"💾 Marked as Read in AI Memory: {msg_id}\n")
+                            
+                except Exception as single_mail_error:
+                    print(f"⚠️ Error while processing email ID {e_id.decode()}: {str(single_mail_error)}. Continuing...\n")
         
-        status, messages = mail.search(None, 'SINCE', today_imap_str)
-        if status != "OK" or not messages:
-            print(f"🏖️ No emails found in {folder} from today.")
+        except Exception as folder_error:
+            print(f"⚠️ Error processing folder {folder}: {str(folder_error)}\n")
             continue
-
-        # Extract IMAP list arrays cleanly without crashing
-        raw_bytes = messages[0] if isinstance(messages, list) else messages
-        if not raw_bytes or raw_bytes == b'':
-            print(f"🏖️ No emails found in {folder} from today.")
-            continue
-
-        email_ids = raw_bytes.split()
-        print(f"🔍 Found {len(email_ids)} total items inside {folder} from today. Processing sequentially...")
-
-        # Process each individual email one by one safely
-        for e_id in email_ids:
-            try:
-                status, msg_data = mail.fetch(e_id, "(RFC822)")
-                if status != "OK" or not msg_data:
-                    continue
-                
-                for response_part in msg_data:
-                    # Filter isolates trailing data closing byte arrays from crashing code pipelines
-                    if isinstance(response_part, tuple):
-                        # PASS DIRECTLY: Feeds the data structure correctly into the email interpreter 
-                        msg = email.message_from_bytes(response_part[1])
-                        
-                        msg_id = msg.get("Message-ID", "")
-                        if msg_id:
-                            msg_id = msg_id.strip("< >")
-                        else:
-                            msg_id = f"generated-id-{e_id.decode()}"
-                        
-                        # AI Memory Evaluation Check
-                        if msg_id in ai_read_memory:
-                            print(f"⏩ Skipping: Email ID {msg_id} already marked as read in AI Memory.")
-                            continue
-
-                        from_header = msg.get("From", "")
-                        raw_date = msg.get("Date", "")
-                        
-                        try:
-                            parsed_date = email.utils.parsedate_to_datetime(raw_date)
-                            formatted_time = parsed_date.strftime("%H:%M:%S")
-                        except Exception:
-                            formatted_time = "Unknown Time"
-
-                        subject, encoding = decode_header(msg.get("Subject", "No Subject"))
-                        if isinstance(subject, bytes):
-                            subject = subject.decode(encoding or "utf-8", errors="ignore")
-
-                        print(f"📥 [{formatted_time}] Processing Single Mail: From: {from_header} | Subject: {subject}")
-                        
-                        body_text = get_email_body(msg)
-                        if not body_text:
-                            print("⚠️ Skipping processing: No readable text body found.")
-                            continue
-
-                        print("🖼️ Transforming text fields into secure image matrix canvas...")
-                        img_bytes = text_to_image_bytes(from_header, subject, body_text)
-                        
-                        print("🧠 Passing image matrix directly to Qwen2.5-VL...")
-                        ai_analysis = analyze_image_with_qwen(img_bytes)
-                        
-                        # Process notification actions using baseline parameters
-                        encoded_id = urllib.parse.quote(msg_id)
-                        gmail_url = f"https://google.com{encoded_id}"
-                        priority = "high" if "Suspension" in ai_analysis or "Winner" in ai_analysis else "default"
-                        
-                        send_ntfy_alert(ai_analysis, gmail_url, priority)
-                        print("✅ Analysis dispatched via ntfy successfully.")
-                        
-                        # Mark item as read inside AI memory without changing Gmail state
-                        save_to_ai_memory(msg_id)
-                        ai_read_memory.add(msg_id)
-                        print(f"💾 Marked as Read in AI Memory: {msg_id}\n")
-                        
-            except Exception as single_mail_error:
-                print(f"⚠️ Error while processing email ID {e_id.decode()}: {str(single_mail_error)}. Continuing...")
 
     mail.logout()
+    print("✅ IMAP connection closed.")
 
 def send_ntfy_alert(ai_analysis, email_url, priority):
     url = f"https://ntfy.sh{NTFY_TOPIC.strip('/')}"
