@@ -1300,6 +1300,7 @@
 #     check_email()
 
 
+
 import imaplib
 import email
 from email.header import decode_header
@@ -1496,7 +1497,13 @@ def check_email():
             email_ids = raw_bytes.split()
             print(f"🔍 Found {len(email_ids)} total items inside {folder} from today.\n")
 
+            # --- PROCESS ONLY THE FIRST EMAIL FOUND ---
+            email_processed_in_this_run = False
             for e_id in email_ids:
+                if email_processed_in_this_run:
+                    print("   ℹ️  Stopping after processing one email in this run.")
+                    break # Exit the email loop after one iteration
+
                 print(f"--- Processing Email ID: {e_id.decode()} ---")
                 try:
                     status, msg_data = mail.fetch(e_id, "(RFC822)")
@@ -1580,7 +1587,8 @@ def check_email():
                         processed_count += 1
                         print(f"      💾 Marked as Read in AI Memory (no body): {msg_id}\n")
                         print("=" * 80 + "\n")
-                        continue # Move to the next email in the loop
+                        email_processed_in_this_run = True # Mark that an email was handled
+                        continue # Move to the next email in the loop, but then break the loop
 
                     # --- EXTRACT EMAILS FROM THE BODY ---
                     extracted_emails = extract_emails_from_text(body_text)
@@ -1595,10 +1603,7 @@ def check_email():
                     print(f"\n      🤖 AI Analysis Result:\n{ai_analysis}\n")
                     
                     encoded_id = urllib.parse.quote(msg_id)
-                    # Note: The gmail_url construction seems incorrect in the original code.
-                    # It should likely be a proper Gmail search URL or a link to the specific message view if available via IMAP.
-                    # For now, keeping a placeholder or a generic search link might be more appropriate.
-                    # Example placeholder:
+                    # Example placeholder link
                     gmail_url = f"https://mail.google.com/mail/u/0/#search/rfc822msgid:{encoded_id}" # Example link
                     priority = "high" if "Suspension" in ai_analysis or "Winner" in ai_analysis else "default"
                     
@@ -1615,8 +1620,6 @@ def check_email():
                         print(f"      ❌ Ntfy dispatch failed for {msg_id}: {ntfy_error}")
                         # Decide whether to save the ID if ntfy fails. For now, let's save it anyway,
                         # assuming the core processing (analysis) was attempted.
-                        # If ntfy failure should mean re-processing, remove the save below.
-                        # For this logic, saving seems correct as the email was handled up to the alert step.
                         pass # Error already printed, continue with saving.
 
                     # --- CRITICAL: Save the ID AFTER attempting processing ---
@@ -1625,24 +1628,13 @@ def check_email():
                     processed_count += 1
                     print(f"      💾 Marked as Read in AI Memory: {msg_id}\n")
                     print("=" * 80 + "\n")
+                    email_processed_in_this_run = True # Mark that an email was handled
                     
                 except Exception as single_mail_error:
                     print(f"      ⚠️ Unexpected error while processing email ID {e_id.decode()}: {str(single_mail_error)}\n")
                     import traceback
                     traceback.print_exc()
-                    # Don't save the ID if there was a fundamental error processing it,
-                    # maybe it needs re-attempting next run? Or log the error ID separately.
-                    # For robustness, let's assume an error means it wasn't fully processed,
-                    # but also don't infinitely retry a fatally flawed email.
-                    # Logging the error ID elsewhere might be better long-term.
-                    # For now, we won't save the ID on *unexpected* errors, hoping it resolves.
-                    # However, errors in fetching/saving are different. The ID fetching happens first.
-                    # If msg_id couldn't be fetched, the loop continues without saving.
-                    # If msg_id was fetched but processing failed later, saving prevents infinite loops.
-                    # Given the structure, saving *after* the main processing block (fetch, analyze, alert)
-                    # seems safest, even if the alert failed.
-                    # So, the save() is inside the main processing block, below the alert.
-                    continue # Continue to the next email in the loop
+                    continue # Continue to the next email in the loop, but then break the loop
         
         except Exception as folder_error:
             print(f"⚠️ Error processing folder {folder}: {str(folder_error)}\n")
@@ -1666,9 +1658,10 @@ def send_ntfy_alert(ai_analysis, email_url, priority):
         "Tags": "camera,robot",
         "Click": email_url # This header allows ntfy apps to open a URL on tap
     }
-    data = f"{ai_analysis}\n\n👉 Tap this notification to open email in Gmail."
-    # Use requests.post to send the data
-    response = requests.post(url, data=data.encode('utf-8'), headers=headers)
+    # Ensure the message body is correctly encoded as UTF-8
+    message_body = f"{ai_analysis}\n\n👉 Tap this notification to open email in Gmail."
+    # Use requests.post to send the data, explicitly encoding the body as UTF-8
+    response = requests.post(url, data=message_body.encode('utf-8'), headers=headers) # Explicitly encode data
     # Check the response status code
     if response.status_code != 200:
          print(f"   ❌ Ntfy request failed with status {response.status_code}: {response.text}")
