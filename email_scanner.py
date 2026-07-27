@@ -396,16 +396,21 @@ def check_email():
             for e_id in email_ids:
                 try:
                     status, msg_data = mail.fetch(e_id, "(RFC822)")
-                    if status != "OK" or not msg_data or len(msg_data) == 0:
+                    if status != "OK":
                         print(f"⚠️ Could not fetch email ID {e_id.decode()}")
                         continue
                     
-                    # FIXED: Properly extract message data from the response tuple
+                    # FIXED: Handle the IMAP response structure correctly
                     msg_content = None
-                    for response_part in msg_data:
-                        if isinstance(response_part, tuple) and len(response_part) >= 2:
-                            msg_content = response_part[1]
-                            break
+                    if msg_data and isinstance(msg_data, list):
+                        for response_part in msg_data:
+                            # response_part can be a tuple (headers, body) or just bytes
+                            if isinstance(response_part, tuple):
+                                msg_content = response_part[1]
+                                break
+                            elif isinstance(response_part, bytes):
+                                msg_content = response_part
+                                break
                     
                     if msg_content is None:
                         print(f"⚠️ No valid message content found for email ID {e_id.decode()}")
@@ -476,10 +481,14 @@ def check_email():
                     
                 except Exception as single_mail_error:
                     print(f"⚠️ Error while processing email ID {e_id.decode()}: {str(single_mail_error)}\n")
+                    import traceback
+                    traceback.print_exc()
                     continue
         
         except Exception as folder_error:
             print(f"⚠️ Error processing folder {folder}: {str(folder_error)}\n")
+            import traceback
+            traceback.print_exc()
             continue
 
     mail.logout()
