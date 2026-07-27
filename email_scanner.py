@@ -645,6 +645,165 @@ def get_email_body(msg):
 
 
 
+# def check_email():
+#     """Main scanning connection engine exploring all folders sequentially."""
+#     try:
+#         print("🔐 Connecting to Gmail IMAP server...")
+#         mail = imaplib.IMAP4_SSL("imap.gmail.com")
+#         print("✅ Successfully connected to Gmail!")
+#     except Exception as conn_error:
+#         print(f"❌ IMAP Connection Failed: {str(conn_error)}")
+#         return
+    
+#     try:
+#         mail.login(EMAIL_USER, EMAIL_PASS)
+#         print("✅ Successfully logged in!")
+#     except Exception as login_error:
+#         print(f"❌ Login Failed: {str(login_error)}")
+#         mail.logout()
+#         return
+
+#     user_tz = pytz.timezone("Asia/Kolkata") 
+#     today_imap_str = datetime.now(user_tz).strftime("%d-%b-%Y")
+#     print(f"📅 Scanning all mail categories initialized for date: {today_imap_str}\n")
+
+#     ai_read_memory = load_ai_memory()
+#     target_folders = ["[Gmail]/All Mail", "[Gmail]/Spam"]
+#     processed_count = 0
+
+#     for folder in target_folders:
+#         try:
+#             print(f"📂 Opening Folder Location: {folder}...")
+#             status, _ = mail.select(f'"{folder}"', readonly=True)
+#             if status != "OK":
+#                 print(f"⚠️ Could not select folder: {folder}")
+#                 continue
+            
+#             status, messages = mail.search(None, 'SINCE', today_imap_str)
+#             if status != "OK" or not messages:
+#                 print(f"🏖️ No emails found in {folder} from today.")
+#                 continue
+
+#             raw_bytes = messages[0] if isinstance(messages, list) else messages
+#             if not raw_bytes or raw_bytes == b'':
+#                 print(f"🏖️ No emails found in {folder} from today.")
+#                 continue
+
+#             email_ids = raw_bytes.split()
+#             print(f"🔍 Found {len(email_ids)} total items inside {folder} from today.\n")
+
+#             for e_id in email_ids:
+#                 try:
+#                     status, msg_data = mail.fetch(e_id, "(RFC822)")
+#                     if status != "OK":
+#                         continue
+                    
+#                     msg_content = None
+#                     if msg_data and isinstance(msg_data, list):
+#                         for response_part in msg_data:
+#                             if isinstance(response_part, tuple):
+#                                 msg_content = response_part[1]
+#                                 break
+#                             elif isinstance(response_part, bytes):
+#                                 msg_content = response_part
+#                                 break
+                    
+#                     if msg_content is None:
+#                         continue
+                    
+#                     try:
+#                         msg = email.message_from_bytes(msg_content)
+#                     except Exception:
+#                         continue
+                    
+#                     msg_id = msg.get("Message-ID", "")
+#                     if msg_id:
+#                         msg_id = msg_id.strip("< >")
+#                     else:
+#                         msg_id = f"generated-id-{e_id.decode()}"
+                    
+#                     if msg_id in ai_read_memory:
+#                         continue
+
+#                     from_header = msg.get("From", "Unknown Sender")
+#                     raw_date = msg.get("Date", "")
+                    
+#                     try:
+#                         parsed_date = email.utils.parsedate_to_datetime(raw_date)
+#                         formatted_time = parsed_date.strftime("%H:%M:%S")
+#                     except Exception:
+#                         formatted_time = "Unknown Time"
+
+#                     # --- FIX STARTS HERE ---
+#                     raw_subject = msg.get("Subject", "No Subject")
+#                     decoded_parts = decode_header(raw_subject)
+                    
+#                     # decode_header returns a list of tuples: [(string, encoding), ...]
+#                     # We take the first part and decode it safely
+#                     if decoded_parts:
+#                         part, encoding = decoded_parts[0]
+#                         if isinstance(part, bytes):
+#                             # If it's bytes, decode using the provided encoding or utf-8
+#                             subject = part.decode(encoding or 'utf-8', errors='ignore')
+#                         else:
+#                             # If it's already a string
+#                             subject = part
+#                     else:
+#                         subject = "No Subject"
+#                     # --- FIX ENDS HERE ---
+
+#                     print(f"📥 [{formatted_time}] Processing Single Mail:")
+#                     print(f"   From: {from_header}")
+#                     print(f"   Subject: {subject}")
+                    
+#                     body_text = get_email_body(msg)
+#                     if not body_text:
+#                         print("⚠️ Skipping processing: No readable text body found.\n")
+#                         continue
+
+#                     print("🖼️ Transforming text fields into secure image matrix canvas...")
+#                     img_bytes = text_to_image_bytes(from_header, subject, body_text)
+                    
+#                     print("🧠 Passing image matrix directly to Qwen2.5-VL...")
+#                     ai_analysis = analyze_image_with_qwen(img_bytes)
+                    
+#                     print(f"\n🤖 AI Analysis Result:\n{ai_analysis}\n")
+                    
+#                     encoded_id = urllib.parse.quote(msg_id)
+#                     gmail_url = f"https://google.com{encoded_id}"
+#                     priority = "high" if "Suspension" in ai_analysis or "Winner" in ai_analysis else "default"
+                    
+#                     send_ntfy_alert(ai_analysis, gmail_url, priority)
+#                     print("✅ Analysis dispatched via ntfy successfully.")
+                    
+#                     save_to_ai_memory(msg_id)
+#                     ai_read_memory.add(msg_id)
+#                     processed_count += 1
+#                     print(f"💾 Marked as Read in AI Memory: {msg_id}\n")
+#                     print("=" * 80 + "\n")
+                    
+#                 except Exception as single_mail_error:
+#                     print(f"⚠️ Error while processing email ID {e_id.decode()}: {str(single_mail_error)}\n")
+#                     import traceback
+#                     traceback.print_exc()
+#                     continue
+        
+#         except Exception as folder_error:
+#             print(f"⚠️ Error processing folder {folder}: {str(folder_error)}\n")
+#             import traceback
+#             traceback.print_exc()
+#             continue
+
+#     mail.logout()
+#     print("=" * 80)
+#     print(f"✅ IMAP connection closed.")
+#     print(f"📊 Processed {processed_count} email(s) in this run.")
+#     print(f"📂 Total processed emails in memory: {len(ai_read_memory)}")
+
+
+
+
+
 def check_email():
     """Main scanning connection engine exploring all folders sequentially."""
     try:
@@ -725,34 +884,28 @@ def check_email():
                     if msg_id in ai_read_memory:
                         continue
 
+                    # ... inside the loop where you process each email ...
+                    
                     from_header = msg.get("From", "Unknown Sender")
                     raw_date = msg.get("Date", "")
                     
                     try:
+                        # 1. Parse the raw date string from the email header
                         parsed_date = email.utils.parsedate_to_datetime(raw_date)
-                        formatted_time = parsed_date.strftime("%H:%M:%S")
+                        
+                        # 2. Convert it to Indian Standard Time (IST)
+                        ist_date = parsed_date.astimezone(user_tz)
+                        
+                        # 3. Format it to show only the time (or include date if you prefer)
+                        formatted_time = ist_date.strftime("%H:%M:%S") 
+                        
+                        # Optional: If you want to see the date too, use:
+                        # formatted_time = ist_date.strftime("%d-%b %H:%M")
+                        
                     except Exception:
                         formatted_time = "Unknown Time"
 
-                    # --- FIX STARTS HERE ---
-                    raw_subject = msg.get("Subject", "No Subject")
-                    decoded_parts = decode_header(raw_subject)
-                    
-                    # decode_header returns a list of tuples: [(string, encoding), ...]
-                    # We take the first part and decode it safely
-                    if decoded_parts:
-                        part, encoding = decoded_parts[0]
-                        if isinstance(part, bytes):
-                            # If it's bytes, decode using the provided encoding or utf-8
-                            subject = part.decode(encoding or 'utf-8', errors='ignore')
-                        else:
-                            # If it's already a string
-                            subject = part
-                    else:
-                        subject = "No Subject"
-                    # --- FIX ENDS HERE ---
-
-                    print(f"📥 [{formatted_time}] Processing Single Mail:")
+                    print(f"📥 [{formatted_time} IST] Processing Single Mail:")                    
                     print(f"   From: {from_header}")
                     print(f"   Subject: {subject}")
                     
