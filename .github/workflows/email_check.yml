@@ -4,6 +4,12 @@ on:
 
   workflow_dispatch:
 
+permissions:
+  contents: write    # Required to push code, tags, or create releases
+  pull-requests: write # Required to comment on or manage PRs
+  issues: write       # Required to create or update issues
+
+  
 jobs:
   qwen-vision-scan:
     runs-on: ubuntu-latest
