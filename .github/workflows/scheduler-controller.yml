@@ -22,4 +22,4 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.MY_CUSTOM_PAT }} 
           PYTHONUNBUFFERED: "1" # Force Python to stream logs instantly
-        run: python -u github-scheduler.py # The -u flag completely disables output buffering
+        run: python -u scheduler.py # The -u flag completely disables output buffering
