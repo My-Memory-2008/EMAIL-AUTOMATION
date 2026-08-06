@@ -1,178 +1,192 @@
+import json
 import time
 import subprocess
+from datetime import datetime
 import sys
-import os
-import requests
-from datetime import datetime, timedelta
+import pytz
 
-# --- Configuration ---
-# Path to your main email processing script
-EMAIL_SCRIPT_PATH = "email_scanner.py"
-# Desired interval between checks/runs in seconds (30 minutes = 30 * 60 seconds)
-INTERVAL_SECONDS = 30 * 60
-# Maximum allowed time since last *scheduler check* in seconds (5 hours = 5 * 60 * 60 seconds)
-MAX_TIME_SINCE_LAST_CHECK = 5 * 60 * 60
-# File to store the timestamp of the last successful run
-TIMESTAMP_FILE = "last_run_timestamp.txt"
-# --- GitHub Workflow Configuration ---
-# Repository owner (username or organization name)
-REPO_OWNER = os.getenv("REPO_OWNER") # Recommended: Set via environment variable
-# Repository name
-REPO_NAME = os.getenv("REPO_NAME")   # Recommended: Set via environment variable
-# Workflow file name (e.g., "scheduler-controller.yml")
-WORKFLOW_FILE_NAME = "scheduler-controller.yml"
-# GitHub Personal Access Token (PAT) with repo scope
-GITHUB_TOKEN = os.getenv("GITHUB_TOKEN") # Recommended: Set via environment variable
-# Branch name where the workflow file resides
-BRANCH_NAME = "main" # Change if your workflow is on a different branch
+# Setup Indian Standard Timezone
+IST = pytz.timezone('Asia/Kolkata')
 
-if not all([REPO_OWNER, REPO_NAME, WORKFLOW_FILE_NAME, GITHUB_TOKEN]):
-    print("Error: Missing required environment variables for GitHub workflow dispatch.")
-    print("Ensure REPO_OWNER, REPO_NAME, GITHUB_TOKEN are set.")
-    sys.exit(1)
+# Track the absolute start time of this scheduler script
+MASTER_START_TIME = time.time()
+# Define the intervals and thresholds
+RUN_INTERVAL_SECONDS = 30 * 60  # 30 minutes
+MAX_RUNTIME_SECONDS = 5 * 60 * 60  # 5 hours
+WAIT_AFTER_CONTROLLER_SECONDS = 10 # Time to wait after triggering controller before exiting
 
-def load_last_run_time():
-    """Loads the timestamp of the last successful run from the file."""
-    if os.path.exists(TIMESTAMP_FILE):
-        try:
-            with open(TIMESTAMP_FILE, "r") as f:
-                timestamp_str = f.read().strip()
-                if timestamp_str:
-                    return datetime.fromisoformat(timestamp_str)
-        except (ValueError, OSError) as e:
-            print(f"Warning: Could not load last run time from {TIMESTAMP_FILE}: {e}. Assuming no previous run.")
-            return None
+def get_current_ist():
+    return datetime.now(IST)
+
+def run_command(command):
+    """Executes a shell command and returns stdout, stderr, and the return code."""
+    result = subprocess.run(command, shell=True, text=True, capture_output=True)
+    return result.stdout.strip(), result.stderr.strip(), result.returncode
+
+def get_new_run_id(workflow_file):
+    """Reliably fetches the Run ID of the newly triggered workflow."""
+    # Try up to 5 times to find the newly queued/in_progress run
+    for attempt in range(5):
+        # Using --json instead of --jq to avoid shell quoting issues on Windows/Linux runners
+        cmd = f'gh run list --workflow={workflow_file} --limit=5 --json databaseId,status'
+        out, err, code = run_command(cmd)
+        
+        if code == 0 and out:
+            try:
+                runs = json.loads(out)
+                # Find the first run that is actively running or queued
+                for run in runs:
+                    if run.get("status") in ["queued", "in_progress"]:
+                        return str(run["databaseId"])
+            except json.JSONDecodeError:
+                pass
+        
+        time.sleep(3) # Wait a few seconds before checking again
+    
+    # Fallback: If all are completed, just return the most recent one
+    if runs:
+        return str(runs[0]["databaseId"])
     return None
 
-def save_run_time(run_time):
-    """Saves the timestamp of the current run to the file."""
-    try:
-        with open(TIMESTAMP_FILE, "w") as f:
-            f.write(run_time.isoformat())
-    except OSError as e:
-        print(f"Error: Could not save run time to {TIMESTAMP_FILE}: {e}")
-
-def run_email_script():
-    """Executes the main email processing script."""
-    print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Starting email processing script...")
-    try:
-        # Execute the email scanner script
-        result = subprocess.run([sys.executable, EMAIL_SCRIPT_PATH], capture_output=True, text=True)
+def trigger_workflow(workflow_file):
+    """Triggers a GitHub workflow using the GitHub CLI (gh)."""
+    print(f"[{get_current_ist().strftime('%Y-%m-%d %H:%M:%S')}] Triggering workflow: {workflow_file}", flush=True)
+    cmd = f"gh workflow run {workflow_file} --ref main"
+    out, err, code = run_command(cmd)
+    
+    if code != 0:
+        print(f"Error triggering workflow: {err}", flush=True)
+        return None
+    
+    print("Waiting for GitHub to register the new run...", flush=True)
+    run_id = get_new_run_id(workflow_file)
+    
+    if not run_id:
+        print("Failed to fetch the new Run ID.", flush=True)
+        return None
         
-        if result.returncode == 0:
-            print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Email processing script completed successfully.")
-            print("STDOUT:", result.stdout)
-            if result.stderr: # Print stderr if there was any, even if return code is 0
-                print("STDERR:", result.stderr)
-            return True
-        else:
-            print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Email processing script failed with return code {result.returncode}.")
-            print("STDOUT:", result.stdout) # Print stdout even if it failed
-            print("STDERR:", result.stderr)
-            return False
+    print(f"Successfully captured new Run ID: {run_id}", flush=True)
+    return run_id
+
+def monitor_workflow(run_id, workflow_file, job_start_time):
+    """Monitors a workflow run. Triggers scheduler-controller.yml, cancels the run if it exceeds 5 hours."""
+    
+    five_hours_in_seconds = 5 * 60 * 60
+    print(f"Monitoring Workflow Run ID: {run_id} for {workflow_file}", flush=True)
+    
+    while True:
+        elapsed_time = time.time() - job_start_time
+        print(f"Checking status... Elapsed time for this job: {elapsed_time / 3600:.2f} hours", flush=True)
             
-    except FileNotFoundError:
-        print(f"Error: Email processing script '{EMAIL_SCRIPT_PATH}' not found.")
-        return False
-    except Exception as e:
-        print(f"Error running email script: {e}")
-        return False
+        if elapsed_time >= five_hours_in_seconds:
+            print(f"⚠️ Alert: Workflow {workflow_file} (Run ID: {run_id}) has reached the 5-hour limit!", flush=True)
+                
+            controller_wf = "scheduler-controller.yml"
+            print(f"Triggering controller workflow: {controller_wf}...", flush=True)
+            trigger_cmd = f"gh workflow run {controller_wf} --ref main"
+            
+            t_out, t_err, t_code = run_command(trigger_cmd)
+                
+            if t_code == 0:
+                print(f"✅ {controller_wf} triggered successfully. Cancelling target workflow...", flush=True)
+                cancel_cmd = f"gh run cancel {run_id}"
+                c_out, c_err, c_code = run_command(cancel_cmd)
+                
+                if c_code != 0:
+                    print(f"Error cancelling workflow via GitHub CLI: {c_err}", flush=True)
+                else:
+                    print(f"Successfully eliminated target workflow {workflow_file}.", flush=True)
+                    
+                print("🏁 Script logic complete. Terminating scheduler process successfully.", flush=True)
+                sys.exit(0)
+            else:
+                print(f"❌ Failed to trigger {controller_wf}. Error: {t_err}. Aborting.", flush=True)
+                sys.exit(1)
 
-def trigger_github_workflow():
-    """Triggers the GitHub Actions workflow using the GitHub API."""
-    print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Attempting to trigger GitHub workflow '{WORKFLOW_FILE_NAME}' on branch '{BRANCH_NAME}'...")
-    
-    url = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/actions/workflows/{WORKFLOW_FILE_NAME}/dispatches"
-    
-    headers = {
-        "Authorization": f"Bearer {GITHUB_TOKEN}",
-        "Accept": "application/vnd.github.v3+json",
-        "User-Agent": "Python-Scheduler" # Good practice to identify your client
-    }
-    
-    payload = {
-        "ref": BRANCH_NAME,
-        # You can add optional inputs for the workflow here if needed
-        # "inputs": {
-        #     "example_input": "value"
-        # }
-    }
+        # Check status using --json to avoid jq parsing issues
+        status_cmd = f"gh run view {run_id} --json status,conclusion"
+        status_json, status_err, status_code = run_command(status_cmd)
+        
+        if status_code != 0 or not status_json:
+            print(f"CLI Error checking status. Details: {status_err}", flush=True)
+        else:
+            try:
+                status_data = json.loads(status_json)
+                status = status_data.get("status")
+                conclusion = status_data.get("conclusion")
+                    
+                if status == "completed":
+                    print(f"Workflow {workflow_file} finished naturally with conclusion: {conclusion}", flush=True)
+                    break 
+                
+            except Exception as e:
+                print(f"Parsing error: {e}. Raw payload received: {status_json}", flush=True)
 
-    try:
-        response = requests.post(url, json=payload, headers=headers)
-        response.raise_for_status() # Raises an HTTPError for bad responses (4xx or 5xx)
-        print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] GitHub workflow dispatch request sent successfully.")
-        print(f"Response Status Code: {response.status_code}")
-        print(f"Response Text: {response.text}")
-        return True
-    except requests.exceptions.HTTPError as he:
-        print(f"HTTP Error triggering workflow: {he.response.status_code} - {he.response.text}")
-    except requests.exceptions.RequestException as re:
-        print(f"Request Error triggering workflow: {re}")
-    except Exception as e:
-        print(f"Unexpected error triggering workflow: {e}")
-    return False
+        time.sleep(60)
 
+def check_and_execute_main_job():
+    """Triggers the main email_check.yml workflow every 30 minutes."""
+    print(f"[{get_current_ist().strftime('%Y-%m-%d %H:%M:%S')}] Initiating scheduled check for email_check.yml", flush=True)
+    
+    job_start_time = time.time()
+    run_id = trigger_workflow("email_check.yml") # Hardcode the workflow name
+    
+    if run_id:
+        monitor_workflow(run_id, "email_check.yml", job_start_time)
+    else:
+        print("⚠️ Could not retrieve Run ID for email_check.yml. Skipping monitoring for this run.", flush=True)
 
 def main():
-    """Main scheduling loop."""
-    print("Scheduler started. Checking every 30 minutes or if 5 hours have passed since last check.")
-    last_check_time = datetime.now() # Initialize the time of the first check
-
+    print("🚀 Long-running master scheduler started via Python loop engine...", flush=True)
+    print(f"Will trigger 'email_check.yml' every {RUN_INTERVAL_SECONDS / 60} minutes.", flush=True)
+    print(f"Will trigger 'scheduler-controller.yml' if running for more than {MAX_RUNTIME_SECONDS / 3600} hours.", flush=True)
+    
+    # Calculate the time for the next scheduled run
+    next_run_time = time.time() + RUN_INTERVAL_SECONDS
+    
     while True:
-        current_time = datetime.now()
-        time_since_last_check = (current_time - last_check_time).total_seconds()
-
-        should_run_script = False
-        should_trigger_workflow = False
-        reason_script = ""
-        reason_workflow = ""
-
-        # --- Logic for Email Script Run ---
-        last_run_time = load_last_run_time()
-        if last_run_time is None:
-            should_run_script = True
-            reason_script = "First run - no previous timestamp found."
-        else:
-            time_since_last_run = (current_time - last_run_time).total_seconds()
-            if time_since_last_run >= INTERVAL_SECONDS:
-                should_run_script = True
-                reason_script = f"Scheduled 30 minutes have passed since the last run."
-            elif time_since_last_run >= MAX_TIME_SINCE_LAST_RUN:
-                should_run_script = True
-                reason_script = f"Maximum time threshold (5 hours) exceeded since last run."
-
-        # --- Logic for Workflow Trigger ---
-        if time_since_last_check >= MAX_TIME_SINCE_LAST_CHECK:
-             should_trigger_workflow = True
-             reason_workflow = f"Maximum time threshold (5 hours) exceeded since last scheduler check."
-
-        if should_run_script:
-            print(f"Triggering email script: {reason_script}")
-            success = run_email_script()
-            if success:
-                # Only save the time if the script ran successfully
-                save_run_time(current_time)
-                print(f"Email script run completed at {current_time.strftime('%Y-%m-%d %H:%M:%S')}.")
+        current_time = time.time()
+        
+        # Check total runtime of the master scheduler script itself
+        elapsed_master_time = current_time - MASTER_START_TIME
+        if elapsed_master_time >= MAX_RUNTIME_SECONDS:
+            print(f"\n⚠️ Alert: Master script runtime ({elapsed_master_time / 3600:.2f} hours) has exceeded the 5-hour limit!", flush=True)
+            
+            controller_wf = "scheduler-controller.yml"
+            print(f"Triggering controller workflow: {controller_wf}...", flush=True)
+            trigger_cmd = f"gh workflow run {controller_wf} --ref main"
+            
+            t_out, t_err, t_code = run_command(trigger_cmd)
+            if t_code == 0:
+                print(f"✅ {controller_wf} triggered successfully.", flush=True)
+                print(f"Waiting {WAIT_AFTER_CONTROLLER_SECONDS} seconds before terminating scheduler.py...", flush=True)
+                time.sleep(WAIT_AFTER_CONTROLLER_SECONDS) # Wait for 10 seconds
+                print("Terminating scheduler.py now.")
+                sys.exit(0) # Exit the script successfully
             else:
-                print("Email script run failed.")
+                print(f"❌ Failed to trigger {controller_wf}. Error: {t_err}. Attempting to continue.", flush=True)
+                # Optionally, you could reset the MASTER_START_TIME here if you want to keep going
+                # MASTER_START_TIME = time.time() # Reset timer on failure
+                # Or exit if failure is critical
+                # sys.exit(1)
 
-        if should_trigger_workflow:
-            print(f"Triggering GitHub workflow: {reason_workflow}")
-            workflow_success = trigger_github_workflow()
-            if workflow_success:
-                 print(f"Workflow dispatch successful. Terminating scheduler in 10 seconds...")
-                 time.sleep(10) # Wait 10 seconds
-                 print("Scheduler terminating now.")
-                 sys.exit(0) # Exit the script successfully
-            else:
-                 print("Failed to trigger GitHub workflow. Continuing scheduler loop.")
+        # Check if it's time to run the main job (email_check.yml)
+        if current_time >= next_run_time:
+             check_and_execute_main_job()
+             # Update the time for the *next* run
+             next_run_time = time.time() + RUN_INTERVAL_SECONDS
+             print(f"Next 'email_check.yml' run scheduled for: {datetime.fromtimestamp(next_run_time).strftime('%Y-%m-%d %H:%M:%S')} IST")
+        
+        # Sleep for a short period before the next check loop iteration
+        # This allows the runtime check to happen frequently
+        # Use the minimum of remaining time to next run or a fixed check interval (e.g., 1 minute)
+        remaining_time_to_next_run = max(0, next_run_time - current_time)
+        sleep_time = min(remaining_time_to_next_run, 60) # Check every minute at most
+        if sleep_time > 0:
+            print(f"Sleeping for {sleep_time:.0f} seconds...", flush=True)
+            time.sleep(sleep_time)
+        # If sleep_time is 0, the loop continues immediately to re-check times
 
-        # Update the last check time before sleeping
-        last_check_time = current_time
-        # Sleep for the specified interval before the next check
-        print(f"Sleeping for {INTERVAL_SECONDS} seconds (~30 minutes)...")
-        time.sleep(INTERVAL_SECONDS)
 
 if __name__ == "__main__":
     main()
