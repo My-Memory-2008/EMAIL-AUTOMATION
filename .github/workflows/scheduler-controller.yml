@@ -1,11 +1,58 @@
+# name: Master Time Scheduler (Loop Engine)
+# on:
+#   workflow_dispatch: # Allows manual activation from the Actions tab panel
+
+# jobs:
+#   run-scheduler:
+#     runs-on: ubuntu-latest
+#     timeout-minutes: 1440 # Allows the loop to run securely up to 24 hours
+#     steps:
+#       - name: Checkout Code
+#         uses: actions/checkout@v4
+
+#       - name: Setup Python
+#         uses: actions/setup-python@v5
+#         with:
+#           python-version: '3.10'
+
+#       - name: Install Dependencies
+#         run: pip install pytz
+
+#       - name: Run Master Scheduler Script
+#         env:
+#           GH_TOKEN: ${{ secrets.MY_CUSTOM_PAT }} 
+#           PYTHONUNBUFFERED: "1" # Force Python to stream logs instantly
+#         run: python -u scheduler.py # The -u flag completely disables output buffering
+
+
+
+
+
+
+
+
+
+
+
+
 name: Master Time Scheduler (Loop Engine)
+
 on:
   workflow_dispatch: # Allows manual activation from the Actions tab panel
+  
+  # OPTIONAL: Uncomment the lines below if you want this to auto-start on a schedule
+  # schedule:
+  #   - cron: '0 * * * *' # Runs at the top of every hour
 
 jobs:
   run-scheduler:
     runs-on: ubuntu-latest
-    timeout-minutes: 1440 # Allows the loop to run securely up to 24 hours
+    
+    # FIX: GitHub has a hard limit of 6 hours (360 mins). 
+    # Setting this to 355 gives your Python script 5 minutes to trigger 
+    # a new workflow and shut down gracefully before GitHub force-kills it.
+    timeout-minutes: 355 
+    
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -20,6 +67,7 @@ jobs:
 
       - name: Run Master Scheduler Script
         env:
+          # Make sure this PAT has the "workflow" scope enabled in GitHub settings!
           GH_TOKEN: ${{ secrets.MY_CUSTOM_PAT }} 
-          PYTHONUNBUFFERED: "1" # Force Python to stream logs instantly
-        run: python -u scheduler.py # The -u flag completely disables output buffering
+          PYTHONUNBUFFERED: "1" # Force Python to stream logs instantly (no need for -u in the run command)
+        run: python scheduler.py
