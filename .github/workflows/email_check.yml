@@ -1,7 +1,110 @@
+# name: Qwen Vision AI Personal Secretary Scanner
+
+# on:
+
+#   workflow_dispatch:
+
+# permissions:
+#   contents: write    # Required to push code, tags, or create releases
+#   pull-requests: write # Required to comment on or manage PRs
+#   issues: write       # Required to create or update issues
+
+  
+# jobs:
+#   qwen-vision-scan:
+#     runs-on: ubuntu-latest
+
+#     steps:
+#     - name: Checkout Code Repository
+#       uses: actions/checkout@v4
+
+#     - name: Install TrueType Fonts for Image Rendering
+#       run: |
+#         sudo apt-get update
+#         sudo apt-get install -y fonts-dejavu-core
+    
+#     - name: Install Ollama
+#       run: |
+#           # Safe dedicated installer string path execution 
+#           curl -fsSL https://ollama.com/install.sh | sh
+#           sleep 7
+
+#     - name: Start Ollama Server
+#       run: |
+#           ollama serve &
+#           echo "Waiting for Ollama server to boot..."
+#           until curl -s http://127.0.0.1:11434 > /dev/null; do
+#             sleep 1
+#           done
+#           echo "Ollama server is up and running!"
+
+#     - name: Pull Qwen2.5-VL 3B Model
+#       run: |
+#         ollama pull qwen2.5vl:3b
+
+#     - name: Set up Runtime Python
+#       uses: actions/setup-python@v5
+#       with:
+#         python-version: '3.10'
+
+#     - name: Install Python Canvas & Network Dependencies
+#       run: |
+#         python -m pip install --upgrade pip
+#         pip install requests pillow pytz
+
+#     - name: Execute Vision Script
+#       env:
+#         EMAIL_USER: ${{ secrets.EMAIL_USER }}
+#         EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
+#         NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+#         PYTHONUNBUFFERED: "1"
+#       run: python email_scanner.py
+
+
+#     # - name: Save AI Read Memory History
+#     #   run: |
+#     #       git config --global user.name "GitHub Action Bot"
+#     #       git config --global user.email "actions@github.com"
+#     #       git add processed_emails.txt || true
+#     #       git commit -m "Auto-update AI email memory tracker database [skip ci]" || true
+#     #       git push origin main || true
+
+
+#     # --- NEW STEPS TO SAVE THE FILE ---
+#     - name: Commit processed_emails.txt
+#       run: |
+#         git config --global user.name 'github-actions[bot]'
+#         git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+#         git add processed_emails.txt
+#         git commit -m "Update processed_emails.txt [skip ci]" -o processed_emails.txt || echo "No changes to commit"
+#       # This step only runs if the previous steps (like running the script) were successful
+#       if: success()
+    
+#     - name: Push changes
+#       uses: ad-m/github-push-action@master
+#       with:
+#         github_token: ${{ secrets.GITHUB_TOKEN }} # This token is automatically provided by GitHub Actions
+#         branch: ${{ github.ref }} # Pushes to the current branch (e.g., main, your-branch-name)
+#       # This step only runs if the previous commit step was successful
+#       if: success()
+#     # --- END NEW STEPS ---
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 name: Qwen Vision AI Personal Secretary Scanner
 
 on:
-
   workflow_dispatch:
 
 permissions:
@@ -9,7 +112,6 @@ permissions:
   pull-requests: write # Required to comment on or manage PRs
   issues: write       # Required to create or update issues
 
-  
 jobs:
   qwen-vision-scan:
     runs-on: ubuntu-latest
@@ -27,13 +129,18 @@ jobs:
       run: |
           # Safe dedicated installer string path execution 
           curl -fsSL https://ollama.com/install.sh | sh
-          sleep 7
+          sleep 5 # Give the installer a moment to finish background tasks
 
     - name: Start Ollama Server
       run: |
-          ollama serve &
+          # FIX: Use systemd to start Ollama persistently. 
+          # Background processes (like `ollama serve &`) are killed when the step finishes.
+          sudo systemctl start ollama
+          sudo systemctl enable ollama
+          
           echo "Waiting for Ollama server to boot..."
-          until curl -s http://127.0.0.1:11434 > /dev/null; do
+          # FIX: Added `-f` so curl fails on HTTP errors, not just connection errors
+          until curl -s -f http://127.0.0.1:11434 > /dev/null; do
             sleep 1
           done
           echo "Ollama server is up and running!"
@@ -60,31 +167,28 @@ jobs:
         PYTHONUNBUFFERED: "1"
       run: python email_scanner.py
 
-
-    # - name: Save AI Read Memory History
-    #   run: |
-    #       git config --global user.name "GitHub Action Bot"
-    #       git config --global user.email "actions@github.com"
-    #       git add processed_emails.txt || true
-    #       git commit -m "Auto-update AI email memory tracker database [skip ci]" || true
-    #       git push origin main || true
-
-
     # --- NEW STEPS TO SAVE THE FILE ---
     - name: Commit processed_emails.txt
       run: |
         git config --global user.name 'github-actions[bot]'
         git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-        git add processed_emails.txt
-        git commit -m "Update processed_emails.txt [skip ci]" -o processed_emails.txt || echo "No changes to commit"
-      # This step only runs if the previous steps (like running the script) were successful
+        
+        # FIX: Check if file exists before adding to prevent errors on the first run
+        if [ -f processed_emails.txt ]; then
+          git add processed_emails.txt
+          # FIX: Only commit if there are actually changes staged
+          git diff --staged --quiet || git commit -m "Update processed_emails.txt [skip ci]"
+        else
+          echo "processed_emails.txt not found, skipping commit."
+        fi
       if: success()
     
     - name: Push changes
-      uses: ad-m/github-push-action@master
+      # FIX: Pinned to v0.8.0 to avoid Node.js deprecation warnings
+      uses: ad-m/github-push-action@v0.8.0
       with:
-        github_token: ${{ secrets.GITHUB_TOKEN }} # This token is automatically provided by GitHub Actions
-        branch: ${{ github.ref }} # Pushes to the current branch (e.g., main, your-branch-name)
-      # This step only runs if the previous commit step was successful
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        # FIX: Use ref_name to get just the branch name (e.g., 'main') instead of 'refs/heads/main'
+        branch: ${{ github.ref_name }}
       if: success()
     # --- END NEW STEPS ---
