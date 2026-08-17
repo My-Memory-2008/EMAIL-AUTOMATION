@@ -3870,6 +3870,438 @@
 
 
 
+# import imaplib
+# import email
+# from email.header import decode_header, make_header
+# import email.utils
+# import os
+# import urllib.parse
+# import base64
+# import io
+# import re
+# import requests
+# from datetime import datetime
+# import pytz
+# from PIL import Image, ImageDraw, ImageFont
+# import unicodedata
+
+# # --- Environment Variables ---
+# EMAIL_USER = os.getenv("EMAIL_USER")
+# EMAIL_PASS = os.getenv("EMAIL_PASS")
+# NTFY_TOPIC_NAME = os.getenv("NTFY_TOPIC")
+
+# if not NTFY_TOPIC_NAME or NTFY_TOPIC_NAME.startswith("http"):
+#     print("Error: NTFY_TOPIC environment variable must contain only the topic name (e.g., 'mytopic'). It currently seems incorrect.")
+#     exit(1)
+
+# MEMORY_FILE = "processed_emails.txt"
+# IMPORTANT_SENDERS_FILE = "important_senders.txt"
+
+# def load_ai_memory():
+#     """Loads handled email tracking strings from the local file storage."""
+#     if not os.path.exists(MEMORY_FILE):
+#         return set()
+#     with open(MEMORY_FILE, "r", encoding="utf-8") as f:
+#         return set(line.strip() for line in f if line.strip())
+
+# def save_to_ai_memory(msg_id):
+#     """Saves a processed message hash permanently onto the local file."""
+#     with open(MEMORY_FILE, "a", encoding="utf-8") as f:
+#         f.write(f"{msg_id}\n")
+
+# def load_important_senders():
+#     """Loads a list of keywords from a text file to identify important senders."""
+#     if not os.path.exists(IMPORTANT_SENDERS_FILE):
+#         print(f"Warning: Important senders file '{IMPORTANT_SENDERS_FILE}' not found. Processing all emails.")
+#         return []
+#     with open(IMPORTANT_SENDERS_FILE, "r", encoding="utf-8") as f:
+#         senders = [line.strip().lower() for line in f if line.strip()]
+#     print(f"📋 Loaded {len(senders)} important sender keywords from '{IMPORTANT_SENDERS_FILE}': {senders}")
+#     return senders
+
+# def text_to_image_bytes(sender, subject, body):
+#     """Renders text data onto an image canvas in system memory."""
+#     width = 800
+#     height = 1000
+#     image = Image.new("RGB", (width, height), color=(245, 245, 245))
+#     draw = ImageDraw.Draw(image)
+
+#     try:
+#         font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 16)
+#         bold_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 18)
+#     except IOError:
+#         font = ImageFont.load_default()
+#         bold_font = ImageFont.load_default()
+
+#     draw.text((20, 20), f"Sender Address: {sender}", fill=(0, 0, 0), font=bold_font)
+#     draw.text((20, 50), f"Subject Header: {subject}", fill=(0, 0, 0), font=bold_font)
+#     draw.line([(20, 85), (780, 85)], fill=(180, 180, 180), width=2)
+
+#     margin = 20
+#     offset = 110
+#     lines = []
+
+#     clean_body = body[:2000].replace('\r', '')
+#     for line in clean_body.split('\n'):
+#         if len(line) > 80:
+#             for i in range(0, len(line), 80):
+#                 lines.append(line[i:i+80])
+#         else:
+#             lines.append(line)
+
+#     for line in lines[:40]:
+#         draw.text((margin, offset), line, fill=(50, 50, 50), font=font)
+#         offset += 22
+
+#     img_byte_arr = io.BytesIO()
+#     image.save(img_byte_arr, format='JPEG')
+#     return img_byte_arr.getvalue()
+
+# def analyze_image_with_qwen(image_bytes):
+#     """Feeds base64 image data directly into the local vision pipeline."""
+#     base64_image = base64.b64encode(image_bytes).decode('utf-8')
+
+#     system_instruction = (
+#         "You are an expert vision-capable personal secretary. Read the text printed within the input image carefully. "
+#         "Categorize the document into exactly ONE of these options:\n"
+#         "- Important Meeting / Event\n"
+#         "- Competition Winner / Prize Notification\n"
+#         "- Account Suspension / Channel Ban Risk\n"
+#         "- Core Software / Platform Update\n"
+#         "- Third-Party / Marketing / Low Priority\n\n"
+#         "Provide your analysis in the following format:\n"
+#         "Sender Type: [Brand / Third-Party]\n"
+#         "Category: [Selected Option]\n"
+#         "Summary: [Provide a detailed summary of the email content, ensuring it is at least 150 characters long and  a maximum of 650 charcters long. "
+#                  "Focus on key points, lists, numbers, deadlines, and required actions mentioned in the text. "
+#                  "Do not simply repeat the subject line. Aim for clarity and conciseness while including essential details.]\n"
+#         "Action Required: [Yes/No]"
+#     )
+
+#     try:
+#         response = requests.post(
+#             "http://localhost:11434/api/generate",
+#             json={
+#                 "model": "qwen2.5vl:3b",
+#                 "system": system_instruction,
+#                 "prompt": "Analyze the attached email image render and extract its structural secretary brief.",
+#                 "images": [base64_image],
+#                 "stream": False,
+#                 "options": { "temperature": 0.1 }
+#             },
+#             timeout=240
+#         )
+#         if response.status_code == 200:
+#             return response.json().get("response", "AI analysis processing failed.")
+#     except Exception as e:
+#         return f"AI Secretary Error: {str(e)}"
+#     return "AI Executive Briefing Offline."
+
+# def get_email_body(msg):
+#     """Recursively walks email structure to find and extract plain text."""
+#     if msg.is_multipart():
+#         for part in msg.walk():
+#             content_type = part.get_content_type()
+#             content_disposition = str(part.get("Content-Disposition"))
+
+#             if content_type == "text/plain" and "attachment" not in content_disposition:
+#                 payload = part.get_payload(decode=True)
+#                 if payload:
+#                     if isinstance(payload, bytes):
+#                         return payload.decode(errors="ignore").strip()
+#                     return str(payload).strip()
+#     else:
+#         payload = msg.get_payload(decode=True)
+#         if payload:
+#             if isinstance(payload, bytes):
+#                 return payload.decode(errors="ignore").strip()
+#             return str(payload).strip()
+
+#     return ""
+
+# def extract_emails_from_text(text):
+#     """Extracts email addresses from a given text string using a regular expression."""
+#     email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
+#     found_emails = re.findall(email_pattern, text)
+#     return list(set(found_emails))
+
+
+# def check_email():
+#     """Main scanning connection engine exploring all folders sequentially."""
+#     try:
+#         print("🔐 Connecting to Gmail IMAP server...")
+#         mail = imaplib.IMAP4_SSL("imap.gmail.com")
+#         print("✅ Successfully connected to Gmail!")
+#     except Exception as conn_error:
+#         print(f"❌ IMAP Connection Failed: {str(conn_error)}")
+#         return
+
+#     try:
+#         mail.login(EMAIL_USER, EMAIL_PASS)
+#         print("✅ Successfully logged in!")
+#     except Exception as login_error:
+#         print(f"❌ Login Failed: {str(login_error)}")
+#         mail.logout()
+#         return
+
+#     user_tz = pytz.timezone("Asia/Kolkata")
+#     today_imap_str = datetime.now(user_tz).strftime("%d-%b-%Y")
+#     print(f"📅 Scanning all mail categories initialized for date: {today_imap_str}\n")
+
+#     ai_read_memory = load_ai_memory()
+#     print(f"📂 Loaded {len(ai_read_memory)} previously processed email IDs from memory.")
+
+#     important_senders_list = load_important_senders()
+
+#     target_folders = ["[Gmail]/All Mail", "[Gmail]/Spam"]
+#     processed_count = 0
+
+#     for folder in target_folders:
+#         try:
+#             print(f"📂 Opening Folder Location: {folder}...")
+#             status, _ = mail.select(f'"{folder}"', readonly=True)
+#             if status != "OK":
+#                 print(f"⚠️ Could not select folder: {folder}")
+#                 continue
+
+#             status, messages = mail.search(None, 'SINCE', today_imap_str)
+#             if status != "OK" or not messages:
+#                 print(f"🏖️ No emails found in {folder} from today.")
+#                 continue
+
+#             raw_bytes = messages[0] if isinstance(messages, list) else messages
+#             if not raw_bytes or raw_bytes == b'':
+#                 print(f"🏖️ No emails found in {folder} from today.")
+#                 continue
+
+#             email_ids = raw_bytes.split()
+#             print(f"🔍 Found {len(email_ids)} total items inside {folder} from today.\n")
+
+#             email_processed_in_this_run = False
+#             for e_id in email_ids:
+#                 if email_processed_in_this_run:
+#                     print("   ℹ️  Stopping after processing one email in this run.")
+#                     break
+
+#                 print(f"--- Processing Email ID: {e_id.decode()} ---")
+#                 try:
+#                     status, msg_data = mail.fetch(e_id, "(RFC822)")
+#                     if status != "OK":
+#                         print(f"   ⚠️ Fetch failed for ID {e_id.decode()}")
+#                         continue
+
+#                     msg_content = None
+#                     if msg_data and isinstance(msg_data, list):
+#                         for response_part in msg_data:
+#                             if isinstance(response_part, tuple):
+#                                 msg_content = response_part[1]
+#                                 break
+#                             elif isinstance(response_part, bytes):
+#                                 msg_content = response_part
+#                                 break
+
+#                     if msg_content is None:
+#                         print(f"   ⚠️ No content retrieved for ID {e_id.decode()}")
+#                         continue
+
+#                     try:
+#                         msg = email.message_from_bytes(msg_content)
+#                     except Exception as parse_error:
+#                         print(f"   ⚠️ Error parsing message for ID {e_id.decode()}: {parse_error}")
+#                         continue
+
+#                     msg_id = msg.get("Message-ID", "")
+#                     if msg_id:
+#                         msg_id = msg_id.strip("< >")
+#                     else:
+#                         # Generate a unique ID based on e_id and folder if Message-ID is missing
+#                         msg_id = f"generated-id-{folder}-{e_id.decode()}"
+
+#                     if msg_id in ai_read_memory:
+#                         print(f"   💾 Skipping {msg_id}, already processed.")
+#                         continue
+#                     else:
+#                         print(f"   🆕 First time seeing ID: {msg_id}")
+
+#                     from_header = msg.get("From", "Unknown Sender")
+#                     raw_date = msg.get("Date", "")
+
+#                     try:
+#                         parsed_date = email.utils.parsedate_to_datetime(raw_date)
+#                         ist_date = parsed_date.astimezone(user_tz)
+#                         formatted_time = ist_date.strftime("%H:%M:%S")
+#                     except Exception:
+#                         formatted_time = "Unknown Time"
+
+#                     # --- SUBJECT DECODING (FIXED) ---
+#                     raw_subject = msg.get("Subject", "No Subject")
+#                     decoded_parts = decode_header(raw_subject)
+
+#                     if decoded_parts:
+#                         # Use make_header to properly join and decode ALL parts
+#                         subject = str(make_header(decoded_parts))
+#                     else:
+#                         subject = "No Subject"
+#                     # --- END SUBJECT FIX ---
+
+#                     sender_lower = from_header.lower()
+#                     is_important_sender = any(keyword in sender_lower for keyword in important_senders_list)
+
+#                     if not is_important_sender:
+#                         print(f"   🚫 Skipping email from '{from_header}' as it's not in the important senders list.")
+#                         save_to_ai_memory(msg_id)
+#                         ai_read_memory.add(msg_id)
+#                         processed_count += 1
+#                         print(f"      💾 Marked as Read in AI Memory (not important sender): {msg_id}\n")
+#                         print("=" * 80 + "\n")
+#                         continue
+
+#                     print(f"   📥 [{formatted_time} IST] Processing Single Mail (Important Sender):")
+#                     print(f"      From: {from_header}")
+#                     print(f"      Subject: {subject}")
+
+#                     body_text = get_email_body(msg)
+#                     if not body_text:
+#                         print("      ⚠️ Skipping processing: No readable text body found.\n")
+#                         save_to_ai_memory(msg_id)
+#                         ai_read_memory.add(msg_id)
+#                         processed_count += 1
+#                         print(f"      💾 Marked as Read in AI Memory (no body): {msg_id}\n")
+#                         print("=" * 80 + "\n")
+#                         continue
+
+#                     extracted_emails = extract_emails_from_text(body_text)
+#                     print(f"      Emails found in body: {extracted_emails}")
+
+#                     print("      🖼️ Transforming text fields into secure image matrix canvas...")
+#                     img_bytes = text_to_image_bytes(from_header, subject, body_text)
+
+#                     print("      🧠 Passing image matrix directly to Qwen2.5-VL...")
+#                     ai_analysis = analyze_image_with_qwen(img_bytes)
+
+#                     print(f"\n      🤖 AI Analysis Result:\n{ai_analysis}\n")
+
+#                     # --- GENERATE GMAIL URL BASED ON FOLDER ---
+#                     # Use raw quotes in hash fragment - URL encoding breaks Gmail's search parser
+#                     # This should link directly to the email identified by Message-ID
+#                     gmail_url = f'https://mail.google.com/mail/u/0/#search/rfc822msgid:"{msg_id}"'
+#                     print(f"      🔗 Generated Gmail URL for email ID {msg_id}: {gmail_url}")
+
+
+#                     priority = "high" if "Suspension" in ai_analysis or "Winner" in ai_analysis else "default"
+
+#                     alert_body = ai_analysis
+#                     if extracted_emails:
+#                         alert_body += f"\n\n📧 Emails found in body: {', '.join(extracted_emails)}"
+
+#                     try:
+#                         send_ntfy_alert(alert_body, gmail_url, priority)
+#                         print("      ✅ Analysis dispatched via ntfy successfully.")
+#                     except Exception as ntfy_error:
+#                         print(f"      ❌ Ntfy dispatch failed for {msg_id} (any error): {ntfy_error}")
+#                         pass
+
+#                     save_to_ai_memory(msg_id)
+#                     ai_read_memory.add(msg_id)
+#                     processed_count += 1
+#                     print(f"      💾 Marked as Read in AI Memory: {msg_id}\n")
+#                     print("=" * 80 + "\n")
+#                     email_processed_in_this_run = True
+
+#                 except Exception as single_mail_error:
+#                     print(f"      ⚠️ Unexpected error while processing email ID {e_id.decode()}: {str(single_mail_error)}\n")
+#                     import traceback
+#                     traceback.print_exc()
+#                     continue
+
+#         except Exception as folder_error:
+#             print(f"⚠️ Error processing folder {folder}: {str(folder_error)}\n")
+#             import traceback
+#             traceback.print_exc()
+#             continue
+
+#     mail.logout()
+#     print("=" * 80)
+#     print(f"✅ IMAP connection closed.")
+#     print(f"📊 Processed {processed_count} email(s) in this run.")
+#     print(f"📂 Total processed emails in memory file ({MEMORY_FILE}): {len(ai_read_memory)}")
+
+
+# def send_ntfy_alert(ai_analysis, email_url, priority):
+#     """Sends a push notification via ntfy.sh with multi-tier fallback."""
+#     url = f"https://ntfy.sh/{NTFY_TOPIC_NAME.strip('/')}"
+
+#     safe_priority = priority if priority in ['low', 'default', 'high', 'urgent'] else 'default'
+#     headers = {
+#         "Title": "👁️ Qwen Vision Secretary Brief",
+#         "Priority": safe_priority,
+#         "Click": email_url # This header tells ntfy where to go when clicked
+#     }
+
+#     message_body = f"{ai_analysis}\n\n👉 Tap this notification to open email in Gmail."
+
+#     # --- Tier 1: Attempt with original data ---
+#     try:
+#         response = requests.post(url, data=message_body.encode('utf-8'), headers=headers, timeout=20)
+#         if response.status_code == 200:
+#             print(f"   📬 Sent ntfy alert for topic '{NTFY_TOPIC_NAME}' successfully (Tier 1).")
+#             return
+#         else:
+#             print(f"   ❌ Ntfy request (Tier 1) failed with status {response.status_code}: {response.text}")
+#     except Exception as e1:
+#         print(f"   ❌ Ntfy request (Tier 1) failed due to an exception: {e1}")
+
+#     # --- Tier 2: Sanitize and retry ---
+#     print("   Attempting fallback (Tier 2) with sanitized data...")
+#     try:
+#         normalized_body = unicodedata.normalize('NFKD', message_body)
+#         normalized_title = unicodedata.normalize('NFKD', headers["Title"])
+#         ascii_body = normalized_body.encode('ascii', errors='ignore').decode('ascii', errors='ignore')
+#         ascii_title = normalized_title.encode('ascii', errors='ignore').decode('ascii', errors='ignore')
+
+#         fallback_headers = {
+#             "Title": ascii_title.strip(),
+#             "Priority": safe_priority,
+#             "Click": email_url # Maintain the click URL in fallback
+#         }
+#         fallback_message = f"ALERT BODY SANITIZED DUE TO ENCODING ISSUES.\n\n{ascii_body}"
+
+#         response_fallback = requests.post(url, data=fallback_message.encode('utf-8'), headers=fallback_headers, timeout=20)
+#         if response_fallback.status_code == 200:
+#             print(f"   📬 Sent ntfy alert for topic '{NTFY_TOPIC_NAME}' successfully (Tier 2 - Fallback).")
+#             return
+#         else:
+#             print(f"   ❌ Ntfy request (Tier 2 - Fallback) failed with status {response_fallback.status_code}: {response_fallback.text}")
+#     except Exception as e2:
+#         print(f"   ❌ Ntfy request (Tier 2 - Fallback) failed due to an exception: {e2}")
+
+#     # --- Tier 3: Ultimate Fallback ---
+#     print("   Attempting ultimate fallback (Tier 3) with basic message...")
+#     ultimate_fallback_message = "Email processing completed, but AI analysis could not be sent via ntfy due to encoding/network issues."
+#     ultimate_fallback_headers = {
+#         "Title": "Email Processing Alert - Fallback",
+#         "Priority": "default",
+#         "Click": email_url # Maintain the click URL in ultimate fallback
+#     }
+#     try:
+#         response_ultimate = requests.post(url, data=ultimate_fallback_message.encode('utf-8'), headers=ultimate_fallback_headers, timeout=20)
+#         if response_ultimate.status_code == 200:
+#             print(f"   📬 Sent basic ntfy alert for topic '{NTFY_TOPIC_NAME}' successfully (Tier 3 - Ultimate Fallback).")
+#         else:
+#             print(f"   ❌ Ultimate fallback ntfy request failed with status {response_ultimate.status_code}: {response_ultimate.text}")
+#     except Exception as e3:
+#         print(f"   ❌ Ultimate fallback ntfy request failed due to an exception: {e3}")
+
+#     raise RuntimeError("All ntfy sending tiers failed.")
+
+
+# if __name__ == "__main__":
+#     check_email()
+
+
+
+
+
 import imaplib
 import email
 from email.header import decode_header, make_header
@@ -3884,11 +4316,17 @@ from datetime import datetime
 import pytz
 from PIL import Image, ImageDraw, ImageFont
 import unicodedata
+from playwright.sync_api import sync_playwright # Import Playwright
 
 # --- Environment Variables ---
 EMAIL_USER = os.getenv("EMAIL_USER")
-EMAIL_PASS = os.getenv("EMAIL_PASS")
+EMAIL_PASS = os.getenv("EMAIL_PASS") # Might still be needed for initial IMAP login if not using stored profile creds elsewhere
 NTFY_TOPIC_NAME = os.getenv("NTFY_TOPIC")
+# Path to the Chrome/Chromium user data directory containing the authenticated profile
+CHROME_USER_DATA_DIR = os.getenv("CHROME_USER_DATA_DIR") # e.g., "/path/to/chrome/profile"
+if not CHROME_USER_DATA_DIR:
+    print("Error: CHROME_USER_DATA_DIR environment variable must point to the Chrome user data directory containing an authenticated Gmail profile.")
+    exit(1)
 
 if not NTFY_TOPIC_NAME or NTFY_TOPIC_NAME.startswith("http"):
     print("Error: NTFY_TOPIC environment variable must contain only the topic name (e.g., 'mytopic'). It currently seems incorrect.")
@@ -3972,7 +4410,7 @@ def analyze_image_with_qwen(image_bytes):
         "Provide your analysis in the following format:\n"
         "Sender Type: [Brand / Third-Party]\n"
         "Category: [Selected Option]\n"
-        "Summary: [Provide a detailed summary of the email content, ensuring it is at least 150 characters long and  a maximum of 650 charcters long. "
+        "Summary: [Provide a detailed summary of the email content, ensuring it is at least 100 characters long. "
                  "Focus on key points, lists, numbers, deadlines, and required actions mentioned in the text. "
                  "Do not simply repeat the subject line. Aim for clarity and conciseness while including essential details.]\n"
         "Action Required: [Yes/No]"
@@ -4024,6 +4462,53 @@ def extract_emails_from_text(text):
     email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
     found_emails = re.findall(email_pattern, text)
     return list(set(found_emails))
+
+def get_final_gmail_url_via_playwright(initial_url):
+    """
+    Uses Playwright to navigate to the initial Gmail URL and returns the final URL
+    after page load, which should be the direct link to the email.
+    Requires an authenticated Chrome profile specified by CHROME_USER_DATA_DIR.
+    """
+    print(f"   🌐 Attempting to get final URL via Playwright for: {initial_url}")
+    final_url = initial_url # Default fallback if Playwright fails
+
+    try:
+        with sync_playwright() as p:
+            # Launch browser using the existing user profile
+            browser = p.chromium.launch_persistent_context(
+                # Path to the user data directory containing the profile
+                user_data_dir=CHROME_USER_DATA_DIR,
+                # Optional: Add arguments if needed (e.g., proxy settings)
+                # args=['--disable-blink-features=AutomationControlled']
+            )
+
+            # Create a new page
+            page = browser.new_page()
+
+            # Navigate to the initial URL
+            page.goto(initial_url, wait_until="networkidle") # Wait until network activity settles
+
+            # Optionally, wait for specific elements indicating the email is loaded
+            # Example: Wait for an element that appears only when the email is open
+            # This depends heavily on Gmail's UI structure and might be brittle
+            # page.wait_for_selector('[role="main"]', timeout=10000) # Example selector, adjust as needed
+
+            # Get the final URL after navigation and potential redirects/loading
+            final_url = page.url
+            print(f"   🎯 Final URL captured by Playwright: {final_url}")
+
+            # Close the page and browser context
+            page.close()
+            browser.close()
+
+    except Exception as e:
+        print(f"   ❌ Playwright error occurred: {e}")
+        # Log the stack trace if needed for debugging
+        # import traceback
+        # traceback.print_exc()
+        # Return the initial URL as fallback if Playwright fails
+
+    return final_url
 
 
 def check_email():
@@ -4085,20 +4570,36 @@ def check_email():
 
                 print(f"--- Processing Email ID: {e_id.decode()} ---")
                 try:
-                    status, msg_data = mail.fetch(e_id, "(RFC822)")
+                    # Fetch envelope and message ID header to get X-GM-MSGID if available
+                    status, msg_data = mail.fetch(e_id, "(BODY.PEEK[HEADER.FIELDS (X-GM-MSGID MESSAGE-ID)] RFC822)")
                     if status != "OK":
                         print(f"   ⚠️ Fetch failed for ID {e_id.decode()}")
                         continue
 
                     msg_content = None
-                    if msg_data and isinstance(msg_data, list):
-                        for response_part in msg_data:
-                            if isinstance(response_part, tuple):
-                                msg_content = response_part[1]
-                                break
-                            elif isinstance(response_part, bytes):
-                                msg_content = response_part
-                                break
+                    x_gm_msgid = None
+                    rfc822_msgid = ""
+
+                    for response_part in msg_data:
+                        if isinstance(response_part, tuple):
+                             # Parse headers first
+                             if isinstance(response_part[0], bytes):
+                                 header_part = response_part[0].decode()
+                                 # Look for X-GM-MSGID in the header part string
+                                 gm_match = re.search(r'X-GM-MSGID\s+(.+?)(?:\r\n|\r|\n)', header_part, re.IGNORECASE)
+                                 if gm_match:
+                                     x_gm_msgid_str = gm_match.group(1).strip()
+                                     try:
+                                         # X-GM-MSGID is typically a 64-bit unsigned integer
+                                         x_gm_msgid_int = int(x_gm_msgid_str)
+                                         # Convert integer to hex string, pad with zeros to 16 chars, uppercase
+                                         x_gm_msgid = f"{x_gm_msgid_int:016X}"
+                                         print(f"      🔍 Found X-GM-MSGID (int): {x_gm_msgid_int}, Hex: {x_gm_msgid}")
+                                     except ValueError:
+                                         print(f"      ⚠️ Could not parse X-GM-MSGID as integer: {x_gm_msgid_str}")
+                             # Parse the full message body
+                             if isinstance(response_part[1], bytes):
+                                 msg_content = response_part[1]
 
                     if msg_content is None:
                         print(f"   ⚠️ No content retrieved for ID {e_id.decode()}")
@@ -4110,13 +4611,28 @@ def check_email():
                         print(f"   ⚠️ Error parsing message for ID {e_id.decode()}: {parse_error}")
                         continue
 
-                    msg_id = msg.get("Message-ID", "")
-                    if msg_id:
-                        msg_id = msg_id.strip("< >")
-                    else:
-                        # Generate a unique ID based on e_id and folder if Message-ID is missing
-                        msg_id = f"generated-id-{folder}-{e_id.decode()}"
+                    # Get the standard Message-ID header
+                    rfc822_msgid_raw = msg.get("Message-ID", "")
+                    if rfc822_msgid_raw:
+                         # Decode the Message-ID header properly
+                         decoded_parts = decode_header(rfc822_msgid_raw)
+                         rfc822_msgid = str(make_header(decoded_parts)).strip('< >') # Remove angle brackets if present
+                         print(f"      📨 Found Standard Message-ID: {rfc822_msgid}")
 
+                    # Generate a fallback ID if no headers are available
+                    if not x_gm_msgid and not rfc822_msgid:
+                        msg_id = f"generated-id-{folder}-{e_id.decode()}"
+                        print(f"      ⚠️ No X-GM-MSGID or Message-ID found, using generated ID: {msg_id}")
+                    elif x_gm_msgid:
+                         # Prefer X-GM-MSGID if available
+                         msg_id = x_gm_msgid
+                         print(f"      ✅ Using X-GM-MSGID for URL: {msg_id}")
+                    else:
+                         # Fall back to standard Message-ID
+                         msg_id = rfc822_msgid
+                         print(f"      ✅ Using Standard Message-ID for URL: {msg_id}")
+
+                    # Check against memory using the chosen ID
                     if msg_id in ai_read_memory:
                         print(f"   💾 Skipping {msg_id}, already processed.")
                         continue
@@ -4181,11 +4697,20 @@ def check_email():
 
                     print(f"\n      🤖 AI Analysis Result:\n{ai_analysis}\n")
 
-                    # --- GENERATE GMAIL URL BASED ON FOLDER ---
-                    # Use raw quotes in hash fragment - URL encoding breaks Gmail's search parser
-                    # This should link directly to the email identified by Message-ID
-                    gmail_url = f'https://mail.google.com/mail/u/0/#search/rfc822msgid:"{msg_id}"'
-                    print(f"      🔗 Generated Gmail URL for email ID {msg_id}: {gmail_url}")
+                    # --- GENERATE INITIAL GMAIL URL BASED ON AVAILABLE ID ---
+                    if x_gm_msgid:
+                         # Attempt to use the X-GM-MSGID directly in the path (e.g., #all/<hex_id>)
+                         initial_gmail_url = f'https://mail.google.com/mail/u/0/#all/{x_gm_msgid}'
+                         print(f"      🔗 Constructed Initial Gmail URL using X-GM-MSGID: {initial_gmail_url}")
+                    else:
+                         # Fallback to searching by Message-ID if X-GM-MSGID is unavailable
+                         initial_gmail_url = f'https://mail.google.com/mail/u/0/#search/rfc822msgid:"{rfc822_msgid}"'
+                         print(f"      🔗 Constructed Initial Gmail URL using Standard Message-ID: {initial_gmail_url}")
+
+                    # --- USE PLAYWRIGHT TO GET THE FINAL URL ---
+                    # This step navigates the authenticated browser and captures the final URL
+                    final_gmail_url = get_final_gmail_url_via_playwright(initial_gmail_url)
+                    print(f"      🎯 Final Gmail URL obtained via Playwright: {final_gmail_url}")
 
 
                     priority = "high" if "Suspension" in ai_analysis or "Winner" in ai_analysis else "default"
@@ -4195,7 +4720,8 @@ def check_email():
                         alert_body += f"\n\n📧 Emails found in body: {', '.join(extracted_emails)}"
 
                     try:
-                        send_ntfy_alert(alert_body, gmail_url, priority)
+                        # Use the URL obtained from Playwright in the notification
+                        send_ntfy_alert(alert_body, final_gmail_url, priority)
                         print("      ✅ Analysis dispatched via ntfy successfully.")
                     except Exception as ntfy_error:
                         print(f"      ❌ Ntfy dispatch failed for {msg_id} (any error): {ntfy_error}")
