@@ -4307,6 +4307,7 @@
 
 
 
+
 import imaplib
 import email
 from email.header import decode_header, make_header
@@ -4321,6 +4322,7 @@ from datetime import datetime
 import pytz
 from PIL import Image, ImageDraw, ImageFont
 import unicodedata
+import html # Import html module for unescaping HTML entities
 
 # --- Environment Variables ---
 EMAIL_USER = os.getenv("EMAIL_USER")
@@ -4435,25 +4437,110 @@ def analyze_image_with_qwen(image_bytes):
     return "AI Executive Briefing Offline."
 
 def get_email_body(msg):
-    """Recursively walks email structure to find and extract plain text."""
+    """
+    Recursively walks email structure to find and extract plain text or HTML text.
+    Prioritizes 'text/plain'. Falls back to 'text/html' if plain text is not found,
+    converting simple HTML tags to plain text.
+    """
+    text_plain_content = ""
+    text_html_content = ""
+
     if msg.is_multipart():
         for part in msg.walk():
             content_type = part.get_content_type()
             content_disposition = str(part.get("Content-Disposition"))
 
-            if content_type == "text/plain" and "attachment" not in content_disposition:
-                payload = part.get_payload(decode=True)
-                if payload:
-                    if isinstance(payload, bytes):
-                        return payload.decode(errors="ignore").strip()
-                    return str(payload).strip()
+            # Check if it's an attachment
+            if content_disposition and "attachment" in content_disposition:
+                continue # Skip attachments
+
+            # Get payload (decoded content)
+            payload = part.get_payload(decode=True)
+            if not payload:
+                continue
+
+            if content_type == "text/plain":
+                # Found plain text part
+                if isinstance(payload, bytes):
+                    try:
+                        # Try UTF-8 first
+                        text_plain_content = payload.decode('utf-8').strip()
+                    except UnicodeDecodeError:
+                        try:
+                            # Fallback to latin-1
+                            text_plain_content = payload.decode('latin-1').strip()
+                        except UnicodeDecodeError:
+                            # Last resort, ignore errors
+                            text_plain_content = payload.decode('utf-8', errors='ignore').strip()
+                else:
+                    text_plain_content = str(payload).strip()
+                # If we find plain text, prioritize it and potentially break early
+                # Or continue to find other parts if needed (here we just take the first significant plain part)
+                if text_plain_content:
+                    print(f"         Found text/plain part (size: {len(text_plain_content)} chars)")
+                    return text_plain_content # Return immediately if plain text is found
+
+            elif content_type == "text/html":
+                # Found HTML part, store it as fallback
+                if isinstance(payload, bytes):
+                    try:
+                        # Try UTF-8 first
+                        text_html_content = payload.decode('utf-8').strip()
+                    except UnicodeDecodeError:
+                        try:
+                            # Fallback to latin-1
+                            text_html_content = payload.decode('latin-1').strip()
+                        except UnicodeDecodeError:
+                            # Last resort, ignore errors
+                            text_html_content = payload.decode('utf-8', errors='ignore').strip()
+                else:
+                    text_html_content = str(payload).strip()
+                print(f"         Found text/html part (size: {len(text_html_content)} chars)")
+
     else:
+        # Not multipart, treat the whole message as the body
         payload = msg.get_payload(decode=True)
         if payload:
+            content_type = msg.get_content_type()
             if isinstance(payload, bytes):
-                return payload.decode(errors="ignore").strip()
-            return str(payload).strip()
+                try:
+                    # Try UTF-8 first
+                    body_text = payload.decode('utf-8').strip()
+                except UnicodeDecodeError:
+                    try:
+                        # Fallback to latin-1
+                        body_text = payload.decode('latin-1').strip()
+                    except UnicodeDecodeError:
+                        # Last resort, ignore errors
+                        body_text = payload.decode('utf-8', errors='ignore').strip()
+            else:
+                body_text = str(payload).strip()
 
+            if content_type == "text/plain":
+                print(f"         Found single-part text/plain body (size: {len(body_text)} chars)")
+                return body_text
+            elif content_type == "text/html":
+                print(f"         Found single-part text/html body (size: {len(body_text)} chars)")
+                text_html_content = body_text
+
+    # If no text/plain was found, try to use the text/html content
+    if text_html_content:
+        print(f"         No text/plain found, attempting to extract text from text/html...")
+        # Basic HTML tag removal and unescaping
+        # Remove common formatting tags, preserving line breaks where appropriate
+        # Replace <br>, <p>, <div> with newlines
+        cleaned_html = re.sub(r'<(br|p|div)\s*/?>', '\n', text_html_content, flags=re.IGNORECASE)
+        # Remove other tags
+        clean_text = re.sub(r'<[^>]+>', '', cleaned_html)
+        # Unescape HTML entities like &amp;, &lt;, &gt;
+        clean_text = html.unescape(clean_text)
+        # Clean up excessive whitespace/newlines
+        clean_text = re.sub(r'\s+', ' ', clean_text).strip()
+        print(f"         Extracted text from HTML (size: {len(clean_text)} chars)")
+        return clean_text
+
+    # If neither text/plain nor text/html parts yielded content
+    print("         No text/plain or text/html parts found or content was empty after processing.")
     return ""
 
 def extract_emails_from_text(text):
@@ -4664,6 +4751,8 @@ def check_email():
                         print(f"      💾 Marked as Read in AI Memory (no body): {msg_id}\n")
                         print("=" * 80 + "\n")
                         continue
+                    else:
+                        print(f"      ✅ Retrieved readable body text (size: {len(body_text)} chars)")
 
                     extracted_emails = extract_emails_from_text(body_text)
                     print(f"      Emails found in body: {extracted_emails}")
