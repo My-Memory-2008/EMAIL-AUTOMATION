@@ -4439,89 +4439,115 @@ def analyze_image_with_qwen(image_bytes):
 
 def get_email_body(msg):
     """Recursively walks email structure to find and extract plain text."""
+    print("         DEBUG: Entering get_email_body function.")
     text_plain_content = ""
     text_html_content = ""
 
+    print(f"         DEBUG: Message is multipart: {msg.is_multipart()}")
     if msg.is_multipart():
-        for part in msg.walk():
+        print("         DEBUG: Looping through message parts using msg.walk():")
+        for i, part in enumerate(msg.walk()):
             content_type = part.get_content_type()
             content_disposition = str(part.get("Content-Disposition"))
+            print(f"             Part {i}: Content-Type='{content_type}', Disposition='{content_disposition}', Is Attachment: {'attachment' in content_disposition}")
+
+            payload = part.get_payload(decode=True)
+            print(f"             Part {i}: Payload type: {type(payload)}, Length (if bytes/str): {len(payload) if payload else 'None'}")
 
             # Check if it's an attachment
             if content_disposition and "attachment" in content_disposition:
+                print(f"             Part {i}: Skipping as it's an attachment.")
                 continue # Skip attachments
 
-            # Get payload (decoded content)
-            payload = part.get_payload(decode=True)
             if not payload:
+                print(f"             Part {i}: Skipping as payload is empty.")
                 continue
 
             if content_type == "text/plain":
-                # Found plain text part
+                print(f"             Part {i}: Found text/plain.")
                 if isinstance(payload, bytes):
                     try:
                         # Try UTF-8 first
                         text_plain_content = payload.decode('utf-8').strip()
+                        print(f"             Part {i}: Decoded as UTF-8.")
                     except UnicodeDecodeError:
                         try:
                             # Fallback to latin-1
                             text_plain_content = payload.decode('latin-1').strip()
+                            print(f"             Part {i}: Decoded as Latin-1.")
                         except UnicodeDecodeError:
                             # Last resort, ignore errors
                             text_plain_content = payload.decode('utf-8', errors='ignore').strip()
+                            print(f"             Part {i}: Decoded with errors ignored.")
                 else:
                     text_plain_content = str(payload).strip()
+                    print(f"             Part {i}: Converted from non-bytes payload.")
+                
                 # If we find plain text, prioritize it and return immediately
                 if text_plain_content:
-                    print(f"         Found text/plain part (size: {len(text_plain_content)} chars)")
+                    print(f"         DEBUG: Found text/plain part (size: {len(text_plain_content)} chars)")
+                    print(f"         DEBUG: Returning text/plain content.")
                     return text_plain_content
 
             elif content_type == "text/html":
-                # Found HTML part, store it as fallback
+                print(f"             Part {i}: Found text/html.")
                 if isinstance(payload, bytes):
                     try:
                         # Try UTF-8 first
                         text_html_content = payload.decode('utf-8').strip()
+                        print(f"             Part {i}: Decoded as UTF-8.")
                     except UnicodeDecodeError:
                         try:
                             # Fallback to latin-1
                             text_html_content = payload.decode('latin-1').strip()
+                            print(f"             Part {i}: Decoded as Latin-1.")
                         except UnicodeDecodeError:
                             # Last resort, ignore errors
                             text_html_content = payload.decode('utf-8', errors='ignore').strip()
+                            print(f"             Part {i}: Decoded with errors ignored.")
                 else:
                     text_html_content = str(payload).strip()
+                    print(f"             Part {i}: Converted from non-bytes payload.")
+                
                 print(f"         Found text/html part (size: {len(text_html_content)} chars)")
+                # Do NOT return here, continue loop to see if text/plain exists
 
     else:
-        # Not multipart, treat the whole message as the body
+        print("         DEBUG: Message is not multipart.")
         payload = msg.get_payload(decode=True)
+        content_type = msg.get_content_type()
+        print(f"         DEBUG: Non-multipart payload type: {type(payload)}, Length: {len(payload) if payload else 'None'}, Content-Type: '{content_type}'")
+
         if payload:
-            content_type = msg.get_content_type()
             if isinstance(payload, bytes):
                 try:
                     # Try UTF-8 first
                     body_text = payload.decode('utf-8').strip()
+                    print(f"         DEBUG: Non-multipart decoded as UTF-8.")
                 except UnicodeDecodeError:
                     try:
                         # Fallback to latin-1
                         body_text = payload.decode('latin-1').strip()
+                        print(f"         DEBUG: Non-multipart decoded as Latin-1.")
                     except UnicodeDecodeError:
                         # Last resort, ignore errors
                         body_text = payload.decode('utf-8', errors='ignore').strip()
+                        print(f"         DEBUG: Non-multipart decoded with errors ignored.")
             else:
                 body_text = str(payload).strip()
+                print(f"         DEBUG: Non-multipart converted from non-bytes payload.")
 
             if content_type == "text/plain":
                 print(f"         Found single-part text/plain body (size: {len(body_text)} chars)")
+                print(f"         DEBUG: Returning single-part text/plain content.")
                 return body_text
             elif content_type == "text/html":
                 print(f"         Found single-part text/html body (size: {len(body_text)} chars)")
-                text_html_content = body_text
+                text_html_content = body_text # Store for potential fallback
 
-    # If no text/plain was found, try to use the text/html content as fallback
+    # If no text/plain was found during the loop or in non-multipart case, try to use the text/html content as fallback
     if text_html_content:
-        print(f"         No text/plain found, attempting to extract text from text/html...")
+        print(f"         DEBUG: No text/plain found, attempting to extract text from text/html...")
         # Basic HTML tag removal and unescaping
         # Replace <br>, <p>, <div> with newlines
         cleaned_html = re.sub(r'<(br|p|div)\s*/?>', '\n', text_html_content, flags=re.IGNORECASE)
@@ -4532,10 +4558,11 @@ def get_email_body(msg):
         # Clean up excessive whitespace/newlines
         clean_text = re.sub(r'\s+', ' ', clean_text).strip()
         print(f"         Extracted text from HTML (size: {len(clean_text)} chars)")
+        print(f"         DEBUG: Returning processed HTML text content.")
         return clean_text
 
     # If neither text/plain nor text/html parts yielded content
-    print("         No text/plain or text/html parts found or content was empty after processing.")
+    print("         DEBUG: Reached end of get_email_body. No text/plain or text/html parts found or content was empty after processing.")
     return ""
 
 def extract_emails_from_text(text):
@@ -4873,7 +4900,7 @@ def send_ntfy_alert(ai_analysis, email_url, priority):
     try:
         response_ultimate = requests.post(url, data=ultimate_fallback_message.encode('utf-8'), headers=ultimate_fallback_headers, timeout=20)
         if response_ultimate.status_code == 200:
-            print(f"   📬 Sent basic ntfy alert for topic '{NTFY_TOPIC_NAME}' successfully (Tier 3 - Ultimate Fallback).")
+            print(f"   📬 Sent basic ntfy alert for topic '{NTFY_TOPIC_NAME}' successfully (Tier 1).")
         else:
             print(f"   ❌ Ultimate fallback ntfy request failed with status {response_ultimate.status_code}: {response_ultimate.text}")
     except Exception as e3:
