@@ -4302,6 +4302,9 @@
 
 
 
+
+
+
 import imaplib
 import email
 from email.header import decode_header, make_header
@@ -4316,17 +4319,11 @@ from datetime import datetime
 import pytz
 from PIL import Image, ImageDraw, ImageFont
 import unicodedata
-from playwright.sync_api import sync_playwright # Import Playwright
 
 # --- Environment Variables ---
 EMAIL_USER = os.getenv("EMAIL_USER")
-EMAIL_PASS = os.getenv("EMAIL_PASS") # Might still be needed for initial IMAP login if not using stored profile creds elsewhere
+EMAIL_PASS = os.getenv("EMAIL_PASS")
 NTFY_TOPIC_NAME = os.getenv("NTFY_TOPIC")
-# Path to the Chrome/Chromium user data directory containing the authenticated profile
-CHROME_USER_DATA_DIR = os.getenv("CHROME_USER_DATA_DIR") # e.g., "/path/to/chrome/profile"
-if not CHROME_USER_DATA_DIR:
-    print("Error: CHROME_USER_DATA_DIR environment variable must point to the Chrome user data directory containing an authenticated Gmail profile.")
-    exit(1)
 
 if not NTFY_TOPIC_NAME or NTFY_TOPIC_NAME.startswith("http"):
     print("Error: NTFY_TOPIC environment variable must contain only the topic name (e.g., 'mytopic'). It currently seems incorrect.")
@@ -4462,54 +4459,6 @@ def extract_emails_from_text(text):
     email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
     found_emails = re.findall(email_pattern, text)
     return list(set(found_emails))
-
-def get_final_gmail_url_via_playwright(initial_url):
-    """
-    Uses Playwright to navigate to the initial Gmail URL and returns the final URL
-    after page load, which should be the direct link to the email.
-    Requires an authenticated Chrome profile specified by CHROME_USER_DATA_DIR.
-    """
-    print(f"   🌐 Attempting to get final URL via Playwright for: {initial_url}")
-    final_url = initial_url # Default fallback if Playwright fails
-
-    try:
-        with sync_playwright() as p:
-            # Launch browser using the existing user profile
-            browser = p.chromium.launch_persistent_context(
-                # Path to the user data directory containing the profile
-                user_data_dir=CHROME_USER_DATA_DIR,
-                # Optional: Add arguments if needed (e.g., proxy settings)
-                # args=['--disable-blink-features=AutomationControlled']
-            )
-
-            # Create a new page
-            page = browser.new_page()
-
-            # Navigate to the initial URL
-            page.goto(initial_url, wait_until="networkidle") # Wait until network activity settles
-
-            # Optionally, wait for specific elements indicating the email is loaded
-            # Example: Wait for an element that appears only when the email is open
-            # This depends heavily on Gmail's UI structure and might be brittle
-            # page.wait_for_selector('[role="main"]', timeout=10000) # Example selector, adjust as needed
-
-            # Get the final URL after navigation and potential redirects/loading
-            final_url = page.url
-            print(f"   🎯 Final URL captured by Playwright: {final_url}")
-
-            # Close the page and browser context
-            page.close()
-            browser.close()
-
-    except Exception as e:
-        print(f"   ❌ Playwright error occurred: {e}")
-        # Log the stack trace if needed for debugging
-        # import traceback
-        # traceback.print_exc()
-        # Return the initial URL as fallback if Playwright fails
-
-    return final_url
-
 
 def check_email():
     """Main scanning connection engine exploring all folders sequentially."""
@@ -4697,20 +4646,18 @@ def check_email():
 
                     print(f"\n      🤖 AI Analysis Result:\n{ai_analysis}\n")
 
-                    # --- GENERATE INITIAL GMAIL URL BASED ON AVAILABLE ID ---
+                    # --- GENERATE FINAL GMAIL URL BASED ON AVAILABLE ID ---
+                    # Prioritize X-GM-MSGID for a potentially more direct link
                     if x_gm_msgid:
                          # Attempt to use the X-GM-MSGID directly in the path (e.g., #all/<hex_id>)
-                         initial_gmail_url = f'https://mail.google.com/mail/u/0/#all/{x_gm_msgid}'
-                         print(f"      🔗 Constructed Initial Gmail URL using X-GM-MSGID: {initial_gmail_url}")
+                         # This often provides a more direct link than a search
+                         gmail_url = f'https://mail.google.com/mail/u/0/#all/{x_gm_msgid}'
+                         print(f"      🔗 Generated Final Gmail URL using X-GM-MSGID: {gmail_url}")
                     else:
                          # Fallback to searching by Message-ID if X-GM-MSGID is unavailable
-                         initial_gmail_url = f'https://mail.google.com/mail/u/0/#search/rfc822msgid:"{rfc822_msgid}"'
-                         print(f"      🔗 Constructed Initial Gmail URL using Standard Message-ID: {initial_gmail_url}")
-
-                    # --- USE PLAYWRIGHT TO GET THE FINAL URL ---
-                    # This step navigates the authenticated browser and captures the final URL
-                    final_gmail_url = get_final_gmail_url_via_playwright(initial_gmail_url)
-                    print(f"      🎯 Final Gmail URL obtained via Playwright: {final_gmail_url}")
+                         # This is the standard method when specific internal IDs aren't available
+                         gmail_url = f'https://mail.google.com/mail/u/0/#search/rfc822msgid:"{rfc822_msgid}"'
+                         print(f"      🔗 Generated Final Gmail URL using Standard Message-ID: {gmail_url}")
 
 
                     priority = "high" if "Suspension" in ai_analysis or "Winner" in ai_analysis else "default"
@@ -4720,8 +4667,8 @@ def check_email():
                         alert_body += f"\n\n📧 Emails found in body: {', '.join(extracted_emails)}"
 
                     try:
-                        # Use the URL obtained from Playwright in the notification
-                        send_ntfy_alert(alert_body, final_gmail_url, priority)
+                        # Use the constructed URL directly
+                        send_ntfy_alert(alert_body, gmail_url, priority)
                         print("      ✅ Analysis dispatched via ntfy successfully.")
                     except Exception as ntfy_error:
                         print(f"      ❌ Ntfy dispatch failed for {msg_id} (any error): {ntfy_error}")
