@@ -102,6 +102,107 @@
 
 
 
+# name: Qwen Vision AI Personal Secretary Scanner
+
+# on:
+#   workflow_dispatch:
+
+# permissions:
+#   contents: write    # Required to push code, tags, or create releases
+#   pull-requests: write # Required to comment on or manage PRs
+#   issues: write       # Required to create or update issues
+
+# jobs:
+#   qwen-vision-scan:
+#     runs-on: ubuntu-latest
+
+#     steps:
+#     - name: Checkout Code Repository
+#       uses: actions/checkout@v4
+
+#     - name: Install TrueType Fonts for Image Rendering
+#       run: |
+#         sudo apt-get update
+#         sudo apt-get install -y fonts-dejavu-core
+    
+#     - name: Install Ollama
+#       run: |
+#           # Safe dedicated installer string path execution 
+#           curl -fsSL https://ollama.com/install.sh | sh
+#           sleep 5 # Give the installer a moment to finish background tasks
+
+#     - name: Start Ollama Server
+#       run: |
+#           # FIX: Use systemd to start Ollama persistently. 
+#           # Background processes (like `ollama serve &`) are killed when the step finishes.
+#           sudo systemctl start ollama
+#           sudo systemctl enable ollama
+          
+#           echo "Waiting for Ollama server to boot..."
+#           # FIX: Added `-f` so curl fails on HTTP errors, not just connection errors
+#           until curl -s -f http://127.0.0.1:11434 > /dev/null; do
+#             sleep 1
+#           done
+#           echo "Ollama server is up and running!"
+
+#     - name: Pull Qwen2.5-VL 3B Model
+#       run: |
+#         ollama pull qwen2.5vl:3b
+
+#     - name: Set up Runtime Python
+#       uses: actions/setup-python@v5
+#       with:
+#         python-version: '3.10'
+
+#     - name: Install Python Canvas & Network Dependencies
+#       run: |
+#         python -m pip install --upgrade pip
+#         pip install requests pillow pytz
+#         pip install playwright
+#         playwright install chromium
+
+#     - name: Execute Vision Script
+#       env:
+#         EMAIL_USER: ${{ secrets.EMAIL_USER }}
+#         EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
+#         NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+#         PYTHONUNBUFFERED: "1"
+#       run: python email_scanner.py
+
+#     # --- NEW STEPS TO SAVE THE FILE ---
+#     - name: Commit processed_emails.txt
+#       run: |
+#         git config --global user.name 'github-actions[bot]'
+#         git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+        
+#         # FIX: Check if file exists before adding to prevent errors on the first run
+#         if [ -f processed_emails.txt ]; then
+#           git add processed_emails.txt
+#           # FIX: Only commit if there are actually changes staged
+#           git diff --staged --quiet || git commit -m "Update processed_emails.txt [skip ci]"
+#         else
+#           echo "processed_emails.txt not found, skipping commit."
+#         fi
+#       if: success()
+    
+#     - name: Push changes
+#       # FIX: Pinned to v0.8.0 to avoid Node.js deprecation warnings
+#       uses: ad-m/github-push-action@v0.8.0
+#       with:
+#         github_token: ${{ secrets.GITHUB_TOKEN }}
+#         # FIX: Use ref_name to get just the branch name (e.g., 'main') instead of 'refs/heads/main'
+#         branch: ${{ github.ref_name }}
+#       if: success()
+#     # --- END NEW STEPS ---
+
+
+
+
+
+
+
+
+
 name: Qwen Vision AI Personal Secretary Scanner
 
 on:
@@ -109,7 +210,7 @@ on:
 
 permissions:
   contents: write    # Required to push code, tags, or create releases
-  pull-requests: write # Required to comment on or manage PRs
+  pull-requests: write # Required to manage PRs
   issues: write       # Required to create or update issues
 
 jobs:
@@ -154,12 +255,11 @@ jobs:
       with:
         python-version: '3.10'
 
-    - name: Install Python Canvas & Network Dependencies
+    - name: Install Python Dependencies (Canvas, Network, removed Playwright)
       run: |
         python -m pip install --upgrade pip
         pip install requests pillow pytz
-        pip install playwright
-        playwright install chromium
+        # Note: playwright is intentionally removed here
 
     - name: Execute Vision Script
       env:
@@ -167,6 +267,7 @@ jobs:
         EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
         NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
         PYTHONUNBUFFERED: "1"
+        # CHROME_USER_DATA_DIR is NOT set because Playwright is not used
       run: python email_scanner.py
 
     # --- NEW STEPS TO SAVE THE FILE ---
