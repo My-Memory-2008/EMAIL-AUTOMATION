@@ -4305,6 +4305,8 @@
 
 
 
+
+
 import imaplib
 import email
 from email.header import decode_header, make_header
@@ -4520,7 +4522,7 @@ def check_email():
                 print(f"--- Processing Email ID: {e_id.decode()} ---")
                 try:
                     # Fetch envelope and message ID header to get X-GM-MSGID if available
-                    status, msg_data = mail.fetch(e_id, "(BODY.PEEK[HEADER.FIELDS (X-GM-MSGID MESSAGE-ID)] RFC822)")
+                    status, msg_data = mail.fetch(e_id, "(BODY.PEEK[HEADER.FIELDS (X-GM-MSGID MESSAGE-ID FROM)] RFC822)") # Added FROM to the header fetch
                     if status != "OK":
                         print(f"   ⚠️ Fetch failed for ID {e_id.decode()}")
                         continue
@@ -4528,6 +4530,7 @@ def check_email():
                     msg_content = None
                     x_gm_msgid = None
                     rfc822_msgid = ""
+                    raw_from_header = "" # To store the raw From header string
 
                     for response_part in msg_data:
                         if isinstance(response_part, tuple):
@@ -4546,6 +4549,12 @@ def check_email():
                                          print(f"      🔍 Found X-GM-MSGID (int): {x_gm_msgid_int}, Hex: {x_gm_msgid}")
                                      except ValueError:
                                          print(f"      ⚠️ Could not parse X-GM-MSGID as integer: {x_gm_msgid_str}")
+
+                                 # Look for FROM header in the header part string (case-insensitive)
+                                 from_match = re.search(r'FROM\s+(.+?)(?:\r\n|\r|\n)', header_part, re.IGNORECASE)
+                                 if from_match:
+                                    raw_from_header = from_match.group(1).strip()
+                                    print(f"      🔍 Found Raw FROM header: {raw_from_header}")
                              # Parse the full message body
                              if isinstance(response_part[1], bytes):
                                  msg_content = response_part[1]
@@ -4588,7 +4597,24 @@ def check_email():
                     else:
                         print(f"   🆕 First time seeing ID: {msg_id}")
 
-                    from_header = msg.get("From", "Unknown Sender")
+                    # --- FROM HEADER DECODING (FIXED) ---
+                    # Use the raw header string found during initial fetch if possible
+                    # Otherwise, fall back to msg.get() and decode it properly
+                    raw_from_header_imap = msg.get("From", "Unknown Sender") # Fallback if not in initial fetch
+                    if raw_from_header:
+                        # Use the raw header from the initial fetch
+                        from_header_raw = raw_from_header
+                    else:
+                        # Fallback to getting it from the full message object
+                        from_header_raw = raw_from_header_imap
+
+                    # Decode the From header properly using decode_header and make_header
+                    decoded_from_parts = decode_header(from_header_raw)
+                    from_header = str(make_header(decoded_from_parts))
+                    print(f"      📩 Decoded From Header: {from_header}")
+                    # --- END FROM HEADER FIX ---
+
+
                     raw_date = msg.get("Date", "")
 
                     try:
@@ -4609,8 +4635,12 @@ def check_email():
                         subject = "No Subject"
                     # --- END SUBJECT FIX ---
 
+                    # --- CHECK IMPORTANT SENDER ---
                     sender_lower = from_header.lower()
                     is_important_sender = any(keyword in sender_lower for keyword in important_senders_list)
+                    print(f"         Checking sender '{from_header}' (lowercase: '{sender_lower}') against important list: {important_senders_list}")
+                    print(f"         Is Important Sender: {is_important_sender}")
+                    # --- END CHECK ---
 
                     if not is_important_sender:
                         print(f"   🚫 Skipping email from '{from_header}' as it's not in the important senders list.")
