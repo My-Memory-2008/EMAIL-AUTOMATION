@@ -3972,7 +3972,7 @@ def analyze_image_with_qwen(image_bytes):
         "Provide your analysis in the following format:\n"
         "Sender Type: [Brand / Third-Party]\n"
         "Category: [Selected Option]\n"
-        "Summary: [Provide a detailed summary of the email content, ensuring it is at least 150 characters long and  a maximum of 650 charcters long. "
+        "Summary: [Provide a detailed summary of the email content, ensuring it is at least 200 characters long . "
                  "Focus on key points, lists, numbers, deadlines, and required actions mentioned in the text. "
                  "Do not simply repeat the subject line. Aim for clarity and conciseness while including essential details.]\n"
         "Action Required: [Yes/No]"
