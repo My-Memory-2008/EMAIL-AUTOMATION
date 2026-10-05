@@ -1,25 +1,54 @@
+# name: Bulk Email Sender
+
+# on:
+#   workflow_dispatch: # Gives you a manual trigger button on the GitHub web UI
+
+# jobs:
+#   send-emails:
+#     runs-on: ubuntu-latest
+
+#     steps:
+#       - name: Pull Project Source Code
+#         uses: actions/checkout@v4
+
+#       - name: Install Python Environment
+#         uses: actions/setup-python@v5
+#         with:
+#           python-version: "3.10"
+
+#       - name: Execute Sender Automation
+#         env:
+#           SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
+#           SMTP_PORT: ${{ secrets.SMTP_PORT }}
+#           EMAIL_USERNAME: ${{ secrets.EMAIL_USERNAME }}
+#           EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+#         run: python send_emails.py
+
+
+
+
+
+
 name: Bulk Email Sender
 
 on:
   workflow_dispatch: # Gives you a manual trigger button on the GitHub web UI
 
+
 jobs:
   send-emails:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Pull Project Source Code
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install Python Environment
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.10"
+          python-version: '3.10'
 
-      - name: Execute Sender Automation
+      - name: Run email script
         env:
-          SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
-          SMTP_PORT: ${{ secrets.SMTP_PORT }}
           EMAIL_USERNAME: ${{ secrets.EMAIL_USERNAME }}
           EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
         run: python send_emails.py
