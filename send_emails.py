@@ -188,19 +188,29 @@ EMAIL_PASSWORD = os.environ.get("EMAIL_PASSWORD")
 TXT_FILE = "emails.txt"
 
 # IMPROVED: More natural, less "bot-like" subject and body
-EMAIL_SUBJECT = "Update regarding your recent inquiry"  # Change to something relevant to your actual use case
+EMAIL_SUBJECT = "Information regarding our recent updates"  # Change to something relevant to your actual use case
 EMAIL_BODY = """Hello,
 
 I hope this message finds you well. 
 
-This is a follow-up regarding our recent communication. Please let me know if you need any further information or assistance.
+This is a Follow-up message our recent updates in the field of the future .
+Yet!, we love to share our website with our connectors.
+I Introduce to you to our website
+. 
+[AWRAM] https://awram-ai-hub1.pages.dev/
+
+Enjoy , while it lasts you won't get the chance to see anything like this in your lifetime.
+
+Site only for Adults / 18+.
+
+Childrens are better to hold on to their horses.
 
 Best regards,
-Your Name / Organization
+Awram
 """
 
 # IMPROVED: Friendly sender format
-SENDER_NAME = "Your Name or Company"  # Replace with your actual name
+SENDER_NAME = "Awram Enter"  # Replace with your actual name
 
 
 def send_emails():
