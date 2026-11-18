@@ -966,3 +966,5 @@ A3.97.31549.8DE7CFA6@i-09c653574b746bd20.mta1vrest.sd.prd.sparkpost
 8B.26.33350.3C65DFA6@i-06e4a843b08a95775.mta2vrest.sd.prd.sparkpost
 54ee7991-ddd1-47a1-8e71-93885d043d1b@dfw1s10mta1942.xt.local
 34.C7.24846.7BB7DFA6@i-0964f9b6be0144a00.mta1vrest.sd.prd.sparkpost
+20261118131823.6ADE7C0000AF@smtpgcus-24-rl.pepipost.com
+cbacc427-e11e-f33e-9449-b78f7272a173@us-news.alison.com
