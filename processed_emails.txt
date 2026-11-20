@@ -997,3 +997,5 @@ p-2DShEbmt4fjgLG6DzPfA@notifications.google.com
 010001a1f66e9716-8d70b3fe-13de-4475-a3e4-cc1d7121396b-000000@email.amazonses.com
 1E.0C.54762.D4E6FFA6@i-0c52486b7a6ed9f36.mta3vrest.sd.prd.sparkpost
 20261120041138.D82A3C0000BC@smtpgcus20-rl.pepipost.com
+20261120045945.7478a405260dfc42@attapoll.app
+NMFFDA97f6646e-43f4-419a-a4d8-869252ed99d4007B0AE4adobe_corpnew_mid_prod5@mail.adobe.com
